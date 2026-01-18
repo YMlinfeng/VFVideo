@@ -7,7 +7,7 @@ debug*
 *.jpeg
 *.ico
 logs
-models
+# models
 data
 *.csv
 __pycache__
