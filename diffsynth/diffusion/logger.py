@@ -12,7 +12,7 @@ class ModelLogger:
     def on_training_start(self, accelerator: Accelerator, model: torch.nn.Module):
         """在训练开始前保存初始模型，方便后续对比"""
         self.save_model(accelerator, model, "initial.safetensors")
-        # print(" 已保存初始检查点: initial.safetensors")
+        # print("save initial.safetensors...")
 
     def on_step_end(self, accelerator: Accelerator, model: torch.nn.Module, save_steps=None):
         self.num_steps += 1

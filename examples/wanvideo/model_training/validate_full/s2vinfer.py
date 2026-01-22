@@ -83,6 +83,11 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--fps", type=int, default=16, help="Output video FPS")
     parser.add_argument("--quality", type=int, default=5, help="Output video quality")
+    parser.add_argument(
+        "--littletestdataset",
+        action="store_true",
+        help="If enabled, load audio in order (same as images) instead of random sampling"
+    )
     
     # ================== 音频参数 ==================
     parser.add_argument(
@@ -453,11 +458,21 @@ def main():
     print(f"[RANK {rank}] Total images in list: {total_images}")
     
     # ================== 获取所有音频文件 ==================
-    all_audio_files = get_all_audio_files(args.audio_dir)
-    if not all_audio_files:
-        raise ValueError(f"No MP3 files found in {args.audio_dir}")
-    
-    print(f"[RANK {rank}] Found {len(all_audio_files)} audio files")
+    if args.littletestdataset:
+        # littletestdataset模式：从txt文件读取音频路径列表
+        with open(args.audio_dir, 'r', encoding='utf-8') as f:
+            all_audio_files = [line.strip() for line in f if line.strip()]
+        if not all_audio_files:
+            raise ValueError(f"No audio paths found in {args.audio_dir}")
+        if len(all_audio_files) != len(image_paths):
+            print(f"[RANK {rank}] [WARN] Audio list length ({len(all_audio_files)}) != Image list length ({len(image_paths)})")
+        print(f"[RANK {rank}] Loaded {len(all_audio_files)} audio paths from txt file")
+    else:
+        # 原有逻辑：从目录递归扫描音频文件
+        all_audio_files = get_all_audio_files(args.audio_dir)
+        if not all_audio_files:
+            raise ValueError(f"No MP3 files found in {args.audio_dir}")
+        print(f"[RANK {rank}] Found {len(all_audio_files)} audio files")
     
     # ================== 加载模型 ==================
     pipe = load_pipeline(args, device)
@@ -492,9 +507,19 @@ def main():
         
         prompt, negative_prompt = load_prompts(image_path, args.fps, rank)
 
-        # 随机选择音频
-        num_audios = min(args.num_audios_per_image, len(all_audio_files))
-        selected_audios = random.sample(all_audio_files, num_audios)
+        # 选择音频
+        if args.littletestdataset:
+            # littletestdataset模式：按行号一一对应
+            if img_idx < len(all_audio_files):
+                selected_audios = [all_audio_files[img_idx]]
+            else:
+                print(f"[RANK {rank}] [WARN] No corresponding audio for image index {img_idx}, skipping...")
+                fail_count += 1
+                continue
+        else:
+            # 原有逻辑：随机选择音频
+            num_audios = min(args.num_audios_per_image, len(all_audio_files))
+            selected_audios = random.sample(all_audio_files, num_audios)
         
         for audio_idx, audio_path in enumerate(selected_audios):
             if not os.path.exists(audio_path):

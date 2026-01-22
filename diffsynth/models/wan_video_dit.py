@@ -88,11 +88,16 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
     return freqs_cis
 
 
-def rope_apply(x, freqs, num_heads):
-    x = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
-    x_out = torch.view_as_complex(x.to(torch.float64).reshape(
-        x.shape[0], x.shape[1], x.shape[2], -1, 2))
-    x_out = torch.view_as_real(x_out * freqs).flatten(2)
+def rope_apply(x, freqs, num_heads): # freps:(18000,40,64)
+    x = rearrange(x, "b s (n d) -> b s n d", n=num_heads) # x: (1, 18000, 40, 128)
+    x_out = torch.view_as_complex(x.to(torch.float64).reshape( # view_as_complex: (1, 18000, 40, 64) dtype=complex128
+        x.shape[0], x.shape[1], x.shape[2], -1, 2)) # reshape(..., -1, 2): (1, 18000, 40, 64, 2)
+    x_out = torch.view_as_real(x_out * freqs).flatten(2) # 这是RoPE的核心：复数乘法 = 旋转
+    # x_out * freqs: (1, 18000, 40, 64) 复数
+    # view_as_real:  (1, 18000, 40, 64, 2) 实数
+    #                                   ↑ (实部, 虚部)
+    # flatten(2):    (1, 18000, 5120)
+    #                         ↑ 40 × 64 × 2 = 5120
     return x_out.to(x.dtype)
 
 

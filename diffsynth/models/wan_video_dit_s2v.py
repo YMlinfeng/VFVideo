@@ -357,7 +357,7 @@ class WanS2VDiTBlock(DiTBlock):
     def forward(self, x, context, t_mod, seq_len_x, freqs):
         # 1. 计算调节参数
         # self.modulation 是可学习的参数
-        # t_mod 是输入的时间嵌入
+        # t_mod 是输入的时间嵌入= (1, 6, 2, 5120)
         # 这一步把时间信息变成了 6 份控制参数 (shift, scale, gate 各两份)
         t_mod = (self.modulation.unsqueeze(2).to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=1)
         # t_mod[:, :, 0] for x, t_mod[:, :, 1] for other like ref, motion, etc.
@@ -370,7 +370,7 @@ class WanS2VDiTBlock(DiTBlock):
         # 1. Modulate (AdaLN): 根据时间 t 调整数据的分布 (均值和方差) # ← 动态调制
         input_x = modulate(self.norm1(x), shift_msa, scale_msa)
         # 2. Self-Attention: 视频里的像素和参考图的像素互相“看”一眼
-        x = self.gate(x, gate_msa, self.self_attn(input_x, freqs))
+        x = self.gate(x, gate_msa, self.self_attn(input_x, freqs)) #x:(1,18000,5120),freqs:(18000,40,64)
         
         x = x + self.cross_attn(self.norm3(x), context)
         

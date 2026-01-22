@@ -1104,104 +1104,6 @@ class WanVideoPostUnit_S2V(PipelineUnit):
         return {"latents": latents}
 
 
-class WanVideoUnit_AnimateVideoSplit(PipelineUnit):
-    def __init__(self):
-        super().__init__(
-            input_params=("input_video", "animate_pose_video", "animate_face_video", "animate_inpaint_video", "animate_mask_video"),
-            output_params=("animate_pose_video", "animate_face_video", "animate_inpaint_video", "animate_mask_video")
-        )
-
-    def process(self, pipe: WanVideoPipeline, input_video, animate_pose_video, animate_face_video, animate_inpaint_video, animate_mask_video):
-        if input_video is None:
-            return {}
-        if animate_pose_video is not None:
-            animate_pose_video = animate_pose_video[:len(input_video) - 4]
-        if animate_face_video is not None:
-            animate_face_video = animate_face_video[:len(input_video) - 4]
-        if animate_inpaint_video is not None:
-            animate_inpaint_video = animate_inpaint_video[:len(input_video) - 4]
-        if animate_mask_video is not None:
-            animate_mask_video = animate_mask_video[:len(input_video) - 4]
-        return {"animate_pose_video": animate_pose_video, "animate_face_video": animate_face_video, "animate_inpaint_video": animate_inpaint_video, "animate_mask_video": animate_mask_video}
-
-
-class WanVideoUnit_AnimatePoseLatents(PipelineUnit):
-    def __init__(self):
-        super().__init__(
-            input_params=("animate_pose_video", "tiled", "tile_size", "tile_stride"),
-            output_params=("pose_latents",),
-            onload_model_names=("vae",)
-        )
-
-    def process(self, pipe: WanVideoPipeline, animate_pose_video, tiled, tile_size, tile_stride):
-        if animate_pose_video is None:
-            return {}
-        pipe.load_models_to_device(self.onload_model_names)
-        animate_pose_video = pipe.preprocess_video(animate_pose_video)
-        pose_latents = pipe.vae.encode(animate_pose_video, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
-        return {"pose_latents": pose_latents}
-
-
-class WanVideoUnit_AnimateFacePixelValues(PipelineUnit):
-    def __init__(self):
-        super().__init__(
-            take_over=True,
-            input_params=("animate_face_video",),
-            output_params=("face_pixel_values"),
-        )
-
-    def process(self, pipe: WanVideoPipeline, inputs_shared, inputs_posi, inputs_nega):
-        if inputs_shared.get("animate_face_video", None) is None:
-            return inputs_shared, inputs_posi, inputs_nega
-        inputs_posi["face_pixel_values"] = pipe.preprocess_video(inputs_shared["animate_face_video"])
-        inputs_nega["face_pixel_values"] = torch.zeros_like(inputs_posi["face_pixel_values"]) - 1
-        return inputs_shared, inputs_posi, inputs_nega
-
-
-class WanVideoUnit_AnimateInpaint(PipelineUnit):
-    def __init__(self):
-        super().__init__(
-            input_params=("animate_inpaint_video", "animate_mask_video", "input_image", "tiled", "tile_size", "tile_stride"),
-            output_params=("y",),
-            onload_model_names=("vae",)
-        )
-        
-    def get_i2v_mask(self, lat_t, lat_h, lat_w, mask_len=1, mask_pixel_values=None, device="cuda"):
-        if mask_pixel_values is None:
-            msk = torch.zeros(1, (lat_t-1) * 4 + 1, lat_h, lat_w, device=device)
-        else:
-            msk = mask_pixel_values.clone()
-        msk[:, :mask_len] = 1
-        msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1)
-        msk = msk.view(1, msk.shape[1] // 4, 4, lat_h, lat_w)
-        msk = msk.transpose(1, 2)[0]
-        return msk
-
-    def process(self, pipe: WanVideoPipeline, animate_inpaint_video, animate_mask_video, input_image, tiled, tile_size, tile_stride):
-        if animate_inpaint_video is None or animate_mask_video is None:
-            return {}
-        pipe.load_models_to_device(self.onload_model_names)
-
-        bg_pixel_values = pipe.preprocess_video(animate_inpaint_video)
-        y_reft = pipe.vae.encode(bg_pixel_values, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)[0].to(dtype=pipe.torch_dtype, device=pipe.device)
-        _, lat_t, lat_h, lat_w = y_reft.shape
-        
-        ref_pixel_values = pipe.preprocess_video([input_image])
-        ref_latents = pipe.vae.encode(ref_pixel_values, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
-        mask_ref = self.get_i2v_mask(1, lat_h, lat_w, 1, device=pipe.device)
-        y_ref = torch.concat([mask_ref, ref_latents[0]]).to(dtype=torch.bfloat16, device=pipe.device)
-        
-        mask_pixel_values = 1 - pipe.preprocess_video(animate_mask_video, max_value=1, min_value=0)
-        mask_pixel_values = rearrange(mask_pixel_values, "b c t h w -> (b t) c h w")
-        mask_pixel_values = torch.nn.functional.interpolate(mask_pixel_values, size=(lat_h, lat_w), mode='nearest')
-        mask_pixel_values = rearrange(mask_pixel_values, "(b t) c h w -> b t c h w", b=1)[:,:,0]
-        msk_reft = self.get_i2v_mask(lat_t, lat_h, lat_w, 0, mask_pixel_values=mask_pixel_values, device=pipe.device)
-        
-        y_reft = torch.concat([msk_reft, y_reft]).to(dtype=torch.bfloat16, device=pipe.device)
-        y = torch.concat([y_ref, y_reft], dim=1).unsqueeze(0)
-        return {"y": y}
-
-
 class TeaCache:
     def __init__(self, num_inference_steps, rel_l1_thresh, model_id):
         self.num_inference_steps = num_inference_steps
@@ -1588,7 +1490,7 @@ def model_fn_wans2v(
     x = latents[:, :, 1:]
 
     # context embedding
-    context = dit.text_embedding(context) # # [1, 512, 4096]->[1, 512, 5120]
+    context = dit.text_embedding(context) # # [1, 512, 4096]->[1, 512, 5120] # （5120 是 DiT 的隐藏维度）
 
     # audio encode
     audio_emb_global, merged_audio_emb = dit.cal_audio_emb(audio_embeds) # [1, 14, 5, 5120]
@@ -1602,21 +1504,21 @@ def model_fn_wans2v(
 
     # reference image
     ref_latents, (rf, rh, rw) = dit.patchify(dit.patch_embedding(origin_ref_latents)) # [1, 1200, 5120]
-    grid_sizes = dit.get_grid_sizes((f, h, w), (rf, rh, rw))
+    grid_sizes = dit.get_grid_sizes((f, h, w), (rf, rh, rw)) # todo
     x = torch.cat([x, ref_latents], dim=1)
     # mask
     mask = torch.cat([torch.zeros([1, seq_len_x]), torch.ones([1, ref_latents.shape[1]])], dim=1).to(torch.long).to(x.device)
     # freqs ROPE:计算 3D 位置信息 (时间、高、宽)
-    pre_compute_freqs = rope_precompute(x.detach().view(1, x.size(1), dit.num_heads, dit.dim // dit.num_heads), grid_sizes, dit.freqs, start=None)
+    pre_compute_freqs = rope_precompute(x.detach().view(1, x.size(1), dit.num_heads, dit.dim // dit.num_heads), grid_sizes, dit.freqs, start=None) # (1, 18000, 40, 64)
     # motion
     # x, pre_compute_freqs, mask = dit.inject_motion(x, pre_compute_freqs, mask, motion_latents, drop_motion_frames=drop_motion_frames, add_last_motion=2)
 
-    x = x + dit.trainable_cond_mask(mask).to(x.dtype)  # 加上一个可训练的 Mask Embedding，让模型区分“生成区”和“参考区”
+    x = x + dit.trainable_cond_mask(mask).to(x.dtype)  # 加上一个可训练的 Mask Embedding，让模型区分“生成区”和“参考区” #todo
 
     # tmod
-    timestep = torch.cat([timestep, torch.zeros([1], dtype=timestep.dtype, device=timestep.device)]) # torch.Size([2]):[528., 0.]
-    t = dit.time_embedding(sinusoidal_embedding_1d(dit.freq_dim, timestep))
-    t_mod = dit.time_projection(t).unflatten(1, (6, dit.dim)).unsqueeze(2).transpose(0, 2) # ([1, 6, 2, 5120])
+    timestep = torch.cat([timestep, torch.zeros([1], dtype=timestep.dtype, device=timestep.device)]) # torch.Size([2]):[528., 0.]拼接两个时间步：实际时间步 + 0（给参考帧用）
+    t = dit.time_embedding(sinusoidal_embedding_1d(dit.freq_dim, timestep)) # 时间嵌入dit.freq_dim=256;(2)->(2,256)->(2,5120)
+    t_mod = dit.time_projection(t).unflatten(1, (6, dit.dim)).unsqueeze(2).transpose(0, 2) # # 投影成调制参数 ([1, 6, 2, 5120]);(2,5120)->(2,30720)->(2,6,5120)->(2,6,1,5120)->...
 
     if use_unified_sequence_parallel and dist.is_initialized() and dist.get_world_size() > 1:
         world_size, sp_rank = get_sequence_parallel_world_size(), get_sequence_parallel_rank()

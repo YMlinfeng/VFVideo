@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
@@ -17,7 +18,6 @@ export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export ACCELERATE_CONFIG_FILE="/m2v_intern/mengzijie/DiffSynth-Studio/examples/wanvideo/model_training/full/accelerate_config_14B_multigpu.yaml"
 export DEEPSPEED_FORCE_MULTI_NODE=1
 export PYTHONUNBUFFERED=1
-export PYTHONWARNINGS="ignore::FutureWarning"
 cat $ACCELERATE_CONFIG_FILE
 
 # 3. 准备 Python 启动指令
@@ -51,7 +51,7 @@ mpirun --allow-run-as-root -np $np \
     -x WORLD_SIZE=$np \
     $PYTHON_EXE -u examples/wanvideo/model_training/train.py \
       --dataset_base_path "" \
-      --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/emo_ge81f_verified.csv" \
+      --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/emo_ge81f_verified_test320000.csv" \
       --data_file_keys "video_path,audio_path" \
       --dataset_num_workers 4 \
       --save_steps 100 \
@@ -64,14 +64,14 @@ mpirun --allow-run-as-root -np $np \
       --audio_processor_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.2-S2V-14B/wav2vec2-large-xlsr-53-english" \
       --tokenizer_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl" \
       --learning_rate 1e-4 \
-      --num_epochs 10 \
+      --num_epochs 1 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/big_s2v_v4_32gpu" \
+      --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v4_32gpu" \
       --extra_inputs "input_image,input_audio" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
-python /ytech_milm/chenming09/codes/check_gpu_big.py
+$HOSTNAME_WRAPPER python /ytech_milm/chenming09/codes/check_gpu_big.py
 sleep 100d;

@@ -3,25 +3,31 @@ import torch
 
 
 def FlowMatchSFTLoss(pipe: BasePipeline, **inputs):
-    # 1. 采样时间步（在调度器定义的范围内随机选一个）
-    max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps))
+    # 1. 采样时间步（在调度器定义的范围内随机选一个时间步，代表"加多少噪声"）timestep 越大 → 噪声越多；为什么要随机采样？我们希望模型学会处理任意噪声程度
+    max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps)) #todo
     min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
-
     timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,))
     timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
     # 2. 生成随机噪声 [1, 16, 15, 80, 60]
     noise = torch.randn_like(inputs["input_latents"]) # [1, 16, 15, 80, 60]
     # 3. 加噪：x_t = interpolate(x_0, noise, t)
-    inputs["latents"] = pipe.scheduler.add_noise(inputs["input_latents"], noise, timestep)
+    ref_latent = inputs["input_latents"][:, :, 0:1]  # 干净的首帧
+    gen_latents = inputs["input_latents"][:, :, 1:]  # 后续帧
+    noise_gen = noise[:, :, 1:]  # 对应的噪声
+    noisy_gen_latents = pipe.scheduler.add_noise(gen_latents, noise_gen, timestep)
+    inputs["latents"] = torch.cat([ref_latent, noisy_gen_latents], dim=2)
+    # inputs["latents"] = pipe.scheduler.add_noise(inputs["input_latents"], noise, timestep)
     # 4. 计算训练目标：v = noise - x_0 (速度场)
-    training_target = pipe.scheduler.training_target(inputs["input_latents"], noise, timestep)
+    target_gen = pipe.scheduler.training_target(gen_latents, noise_gen, timestep)
+    # training_target = pipe.scheduler.training_target(inputs["input_latents"], noise, timestep)
     
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
     # 5. 模型预测速度场
     noise_pred = pipe.model_fn(**models, **inputs, timestep=timestep) # torch.Size([1, 16, 15, 80, 60])
     # 6. MSE Loss + 时间步加权
-    loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
-    loss = loss * pipe.scheduler.training_weight(timestep)
+    noise_pred_gen = noise_pred[:, :, 1:]  # 只取后续帧的预测
+    loss = torch.nn.functional.mse_loss(noise_pred_gen.float(), target_gen.float())
+    loss = loss * pipe.scheduler.training_weight(timestep) # 不同时间步的难度不同，可能需要不同的权重
     return loss
 
 

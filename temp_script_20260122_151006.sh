@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
@@ -17,7 +18,6 @@ export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export ACCELERATE_CONFIG_FILE="/m2v_intern/mengzijie/DiffSynth-Studio/examples/wanvideo/model_training/full/accelerate_config_14B_multigpu.yaml"
 export DEEPSPEED_FORCE_MULTI_NODE=1
 export PYTHONUNBUFFERED=1
-export PYTHONWARNINGS="ignore::FutureWarning"
 cat $ACCELERATE_CONFIG_FILE
 
 # 3. 准备 Python 启动指令
@@ -73,5 +73,5 @@ mpirun --allow-run-as-root -np $np \
       --gradient_accumulation_steps 1 \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
-python /ytech_milm/chenming09/codes/check_gpu_big.py
+$HOSTNAME_WRAPPER python /ytech_milm/chenming09/codes/check_gpu_big.py
 sleep 100d;

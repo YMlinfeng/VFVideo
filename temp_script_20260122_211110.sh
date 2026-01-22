@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 #===============================================================================
 # S2V 多机多卡分布式推理启动脚本
 # 使用 mpirun 拉起多进程，每个进程处理不同的图片
@@ -31,7 +32,6 @@ export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PYTHONUNBUFFERED=1
-export PYTHONWARNINGS="ignore::FutureWarning"
 
 # 生成统一的时间戳，确保所有进程使用相同的输出目录
 export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)

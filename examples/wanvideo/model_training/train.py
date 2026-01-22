@@ -241,16 +241,16 @@ def wan_parser():
 
 
 if __name__ == "__main__":
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
-        print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
-        # import debugpy
-        # debugpy.listen(("0.0.0.0", 5678))
-        # print("=" * 50)
-        # print("Waiting for debugger to attach on port 5678...")
-        # print("=" * 50)
-        # debugpy.wait_for_client()  
-        # print("Debugger attached! Continuing...")
+    # if os.environ.get("LOCAL_RANK", "0") == "0":
+    #     print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
+    #     print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
+    #     import debugpy
+    #     debugpy.listen(("0.0.0.0", 5678))
+    #     print("=" * 50)
+    #     print("Waiting for debugger to attach on port 5678...")
+    #     print("=" * 50)
+    #     debugpy.wait_for_client()  
+    #     print("Debugger attached! Continuing...")
     parser = wan_parser()
     args = parser.parse_args()
     deepspeed_plugin = DeepSpeedPlugin(
@@ -266,20 +266,7 @@ if __name__ == "__main__":
         deepspeed_plugin=deepspeed_plugin, 
         # kwargs_handlers=[accelerate.DistributedDataParallelKwargs(find_unused_parameters=args.find_unused_parameters)]
     )
-    # if accelerator.distributed_type != DistributedType.DEEPSPEED:
-    #     raise RuntimeError(
-    #         f"Fatal error: DeepSpeed not enabled, Current mode: {accelerator.distributed_type}\n"
-    #     )
-    # if dist.is_initialized():
-    #     print(f"\n[DEBUG] Rank {dist.get_rank()}: Distributed Backend is: {dist.get_backend()}")
-    #     print(f"[DEBUG] Rank {dist.get_rank()}: Current Device: {torch.cuda.current_device()}")
-    #     if dist.get_backend() != 'nccl':
-    #         raise ValueError("Error: Backend is NOT NCCL!")
-    # else:
-    #     print("\n[DEBUG] Distributed not initialized yet!")
 
-    accelerator.wait_for_everyone() 
-    # print("Prepare the dataset...")
     dataset = UnifiedDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
@@ -299,13 +286,6 @@ if __name__ == "__main__":
             time_division_remainder=1,
         ),
         special_operator_map={
-            # "animate_face_video": ToAbsolutePath(args.dataset_base_path) >> LoadVideo(args.num_frames, 4, 1, frame_processor=ImageCropAndResize(512, 512, None, 16, 16)),
-            # "input_audio": ToAbsolutePath(args.dataset_base_path) >> LoadAudio(sr=16000),
-            # "audio_path": ToAbsolutePath(args.dataset_base_path) >> LoadAudio(
-            #     num_frames=args.num_frames, 
-            #     tgt_fps=args.tgt_fps, 
-            #     sr=16000
-            # ),
             "audio_path": LoadAudio(
                 num_frames=args.num_frames, 
                 tgt_fps=args.tgt_fps, 
@@ -313,12 +293,6 @@ if __name__ == "__main__":
             ),
         }
     )
-    # print("Load Model...")
-    # local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    # if local_rank > 0:
-    #     # 非主进程稍微等一下，让 rank 0 把文件句柄先拿住
-    #     time.sleep(2 * local_rank) 
-    # if accelerator.is_main_process:
     accelerator.wait_for_everyone()  # <--- 加这句，确保大家都活过来了
     model = WanTrainingModule(
         model_paths=args.model_paths,
@@ -342,9 +316,6 @@ if __name__ == "__main__":
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
     )
-    # else:
-    #     model = None
-    # # 等待 Rank 0 加载完成
     accelerator.wait_for_everyone()
     # model.debug_parameters()
     model_logger = ModelLogger(
@@ -359,5 +330,4 @@ if __name__ == "__main__":
         "direct_distill": launch_training_task,
         "direct_distill:train": launch_training_task,
     }
-    # print("Start Launching...")
     launcher_map[args.task](accelerator, dataset, model, model_logger, args=args)

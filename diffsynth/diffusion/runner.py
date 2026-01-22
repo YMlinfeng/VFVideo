@@ -629,8 +629,8 @@ def launch_training_task(
         num_epochs = args.num_epochs
         debug = args.debug
     
-    # if debug:
-        # diagnose_default_training_status(model)
+    if debug:
+        diagnose_default_training_status(model)
     # optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     optimizer_grouped_parameters = prepare_model_and_optimizer_groups(
         model, 
@@ -653,7 +653,7 @@ def launch_training_task(
             
             for step_index, data in enumerate(tqdm(dataloader, desc=f"Epoch {epoch_id}", 
                                                     disable=not accelerator.is_main_process)):
-                if step_index > 10:
+                if step_index > 14:
                     break
                 # for i, group in enumerate(optimizer.param_groups):
                 #     print(f"Group {i} ({group.get('name', 'unnamed')}): lr = {group['lr']}")
@@ -722,12 +722,12 @@ def launch_training_task(
         for epoch_id in range(num_epochs):
             for data in tqdm(dataloader):
                 with accelerator.accumulate(model):
-                    optimizer.zero_grad()
-                    loss = model(data)
-                    accelerator.backward(loss)
-                    optimizer.step()
+                    optimizer.zero_grad() # PyTorch 默认会累积梯度，所以每次迭代开始要手动清零
+                    loss = model(data) 
+                    accelerator.backward(loss) # 计算 loss 对所有可训练参数的梯度,DL的核心——链式法则求导
+                    optimizer.step() # 根据梯度更新模型权重, 新权重 = 旧权重 - 学习率 × 梯度
                     model_logger.on_step_end(accelerator, model, save_steps)
-                    scheduler.step() 
+                    scheduler.step() # 随着训练进行，调整学习率（通常是逐渐减小）
         accelerator.wait_for_everyone() # 确保所有进程完成
         model_logger.on_training_end(accelerator, model, save_steps)
 
