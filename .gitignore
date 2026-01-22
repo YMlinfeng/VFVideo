@@ -1,6 +1,7 @@
 debug*
 .vscode
 *.mp4
+*.mp3
 *.gif
 *.png
 *.jpg
@@ -33,3 +34,6 @@ diffsynth.egg-info/
 test/
 testdataset/
 data/
+.gradio/
+.cache/
+
