@@ -30,8 +30,10 @@ export http_proxy=http://10.66.16.238:11080
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
+export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
+export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 
 # 生成统一的时间戳，确保所有进程使用相同的输出目录
 export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -104,6 +106,7 @@ mpirun --allow-run-as-root -np $np \
     -x MASTER_PORT=29502 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
+    -x NCCL_TOPO_FILE \
     $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/s2vinfer.py \
         --image_list_path "$IMAGE_LIST_PATH" \
         --audio_dir "$AUDIO_DIR" \

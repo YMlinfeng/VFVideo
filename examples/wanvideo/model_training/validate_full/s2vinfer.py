@@ -25,10 +25,17 @@ from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 os.environ['http_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['https_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['no_proxy'] = 'localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com'
+# 支持 MPI / torchrun / 单卡 三种模式
 if "OMPI_COMM_WORLD_RANK" in os.environ:
+    # MPI 模式
     os.environ["RANK"] = os.environ["OMPI_COMM_WORLD_RANK"]
     os.environ["WORLD_SIZE"] = os.environ["OMPI_COMM_WORLD_SIZE"]
     os.environ["LOCAL_RANK"] = os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
+elif "RANK" not in os.environ:
+    # 单卡模式（无分布式环境变量时设置默认值）
+    os.environ.setdefault("RANK", "0")
+    os.environ.setdefault("WORLD_SIZE", "1")
+    os.environ.setdefault("LOCAL_RANK", "0")
 
 
 
@@ -127,12 +134,21 @@ def parse_args():
 
 def get_distributed_info(args):
     """
-    获取分布式环境信息，优先从MPI环境变量读取
+    获取分布式环境信息，支持多种启动方式：
+    - MPI (OMPI_COMM_WORLD_*)
+    - torchrun (RANK, LOCAL_RANK, WORLD_SIZE)
+    - 单卡直接运行 (使用命令行参数或默认值)
     """
-    # OpenMPI 环境变量
-    rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", args.rank))
-    world_size = int(os.environ.get("OMPI_COMM_WORLD_SIZE", args.world_size))
-    local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", args.local_rank))
+    # 优先级: MPI环境变量 > 通用环境变量 > 命令行参数
+    rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", 
+               os.environ.get("RANK", args.rank)))
+    world_size = int(os.environ.get("OMPI_COMM_WORLD_SIZE", 
+                     os.environ.get("WORLD_SIZE", args.world_size)))
+    local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", 
+                     os.environ.get("LOCAL_RANK", args.local_rank)))
+    
+    # 确保 world_size 至少为 1
+    world_size = max(1, world_size)
     
     return rank, world_size, local_rank
 
@@ -426,11 +442,18 @@ def log_inference_detail(output_dir, video_name, image_path, audio_path, prompt,
 
 def main():
     args = parse_args()
-    # 获取分布式信息
     rank, world_size, local_rank = get_distributed_info(args)
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        print(f"get get_distributed_info: {get_distributed_info}")
-    # 设置CUDA设备
+    
+    # 检查 CUDA 可用性
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available")
+    
+    num_gpus = torch.cuda.device_count()
+    # 修正 local_rank 防止越界
+    if local_rank >= num_gpus:
+        print(f"[WARN] local_rank ({local_rank}) >= available GPUs ({num_gpus}), resetting to 0")
+        local_rank = 0
+    
     torch.cuda.set_device(local_rank)
     device = f"cuda:{local_rank}"
     
@@ -516,6 +539,7 @@ def main():
                 print(f"[RANK {rank}] [WARN] No corresponding audio for image index {img_idx}, skipping...")
                 fail_count += 1
                 continue
+            num_audios = len(selected_audios)  # ← 添加这行
         else:
             # 原有逻辑：随机选择音频
             num_audios = min(args.num_audios_per_image, len(all_audio_files))

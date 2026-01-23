@@ -15,7 +15,8 @@ echo "Done. 重启tmux或按 Ctrl+b : 输入 source ~/.tmux.conf"
 # conda activate /m2v_intern/mengzijie/env/wan2.2/
 # pkill -f check_gpu_big
 # bash /m2v_intern/mengzijie/DiffSynth-Studio/gpu.sh
-
+apt update
+apt install unzip
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 
 which python
