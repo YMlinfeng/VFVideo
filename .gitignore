@@ -38,5 +38,5 @@ data/
 .cache/
 movement/
 __MACOSX/
-
+.gradio/
 
