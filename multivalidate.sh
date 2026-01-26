@@ -41,10 +41,11 @@ echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 3. 推理参数配置 ========================
 # 数据路径
-IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referimg_paths.txt"
-AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referaudio_paths.txt"
-# IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/all_id_test_shuf2.txt" #明星数据集
-# AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
+# IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referimg_paths.txt"
+# AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referaudio_paths.txt"
+# --littletestdataset \
+IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/all_id_test_shuf2.txt" #明星数据集
+AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
 OUTPUT_BASE_DIR="output"
 
 # 模型参数
@@ -123,7 +124,6 @@ mpirun --allow-run-as-root -np $np \
         --quality $QUALITY \
         --num_audios_per_image $NUM_AUDIOS_PER_IMAGE \
         --audio_sample_rate $AUDIO_SAMPLE_RATE \
-        --littletestdataset \
     2>&1 | tee logs/s2v_inference_${OUTPUT_TIMESTAMP}.log
 
 echo "=============================================="
