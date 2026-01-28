@@ -25,29 +25,29 @@ cd /m2v_intern/mengzijie/DiffSynth-Studio/
 
 ##--------------------------##
 # cd /ytech_milm_disk2/tangsonglin05/exp/online_service/human-motion-pe/
-# VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python i2v_v4_infer_motion_image_direction_set_seed.py --csv_path /ytech_milm/mengzijie/DiffSynth-Studio/movement/MzjTest_Fixed_Path.csv
+# VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=2,3  python i2v_v4_infer_motion_image_direction_set_seed.py --csv_path /ytech_milm/mengzijie/DiffSynth-Studio/movement/Mzj54.csv
 
 
 
 
 ##--------------------------##
 
-git branch -M main
-git push -u origin main
+# git branch -M main
+# git push -u origin main
 
-git remote -v
+# git remote -v
 
-# 如果没有 origin，添加它
-git remote add origin https://github.com/YMlinfeng/VFVideo.git
+# # 如果没有 origin，添加它
+# git remote add origin https://github.com/YMlinfeng/VFVideo.git
 
-# 然后推送
-git push -u origin master
-git config user.name "YMlinfeng"
-git config user.email "xiao102851@163.com"
-git config --global user.name "YMlinfeng"
-git config --global user.email "xiao102851@163.com"
+# # 然后推送
+# git push -u origin master
+# git config user.name "YMlinfeng"
+# git config user.email "xiao102851@163.com"
+# git config --global user.name "YMlinfeng"
+# git config --global user.email "xiao102851@163.com"
 
-# 可选：设置其他常用配置
-git config --global core.editor vim  # 设置默认编辑器为 vim
-git config --global color.ui auto    # 启用彩色输出
-git config --global init.defaultBranch main  # 设置默认分支名为 main
+# # 可选：设置其他常用配置
+# git config --global core.editor vim  # 设置默认编辑器为 vim
+# git config --global color.ui auto    # 启用彩色输出
+# git config --global init.defaultBranch main  # 设置默认分支名为 main

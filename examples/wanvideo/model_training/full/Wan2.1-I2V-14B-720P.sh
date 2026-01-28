@@ -1,8 +1,11 @@
+export http_proxy=http://10.66.16.238:11080 https_proxy=http://10.66.16.238:11080 no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
+export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
+
 accelerate launch --config_file examples/wanvideo/model_training/full/accelerate_config_14B.yaml examples/wanvideo/model_training/train.py \
   --dataset_base_path data/example_video_dataset \
   --dataset_metadata_path data/example_video_dataset/metadata.csv \
   --height 720 \
-  --width 1280 \
+  --width 480 \
   --num_frames 49 \
   --dataset_repeat 100 \
   --model_id_with_origin_paths "Wan-AI/Wan2.1-I2V-14B-720P:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.1-I2V-14B-720P:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.1-I2V-14B-720P:Wan2.1_VAE.pth,Wan-AI/Wan2.1-I2V-14B-720P:models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth" \
@@ -12,5 +15,5 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --output_path "./models/train/Wan2.1-I2V-14B-720P_full" \
   --trainable_models "dit" \
   --extra_inputs "input_image" \
-  --use_gradient_checkpointing_offload \
-  --initialize_model_on_cpu
+  # --use_gradient_checkpointing_offload \
+  # --initialize_model_on_cpu

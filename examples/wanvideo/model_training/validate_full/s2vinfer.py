@@ -597,14 +597,14 @@ def main():
 
 
 if __name__ == "__main__":
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        import debugpy
-        debugpy.listen(("0.0.0.0", 5678))
-        print("=" * 50)
-        print("Waiting for debugger to attach on port 5678...")
-        print("=" * 50)
-        debugpy.wait_for_client()  
-        print("Debugger attached! Continuing...")
+    # if os.environ.get("LOCAL_RANK", "0") == "0":
+    #     import debugpy
+    #     debugpy.listen(("0.0.0.0", 5678))
+    #     print("=" * 50)
+    #     print("Waiting for debugger to attach on port 5678...")
+    #     print("=" * 50)
+    #     debugpy.wait_for_client()  
+    #     print("Debugger attached! Continuing...")
     main()
     # all_img_list = open("/ytech_m2v2_hdd/liujiwen/audio_v3/Qwen3-VL/明星照/all_id_test_shuf2.txt").read().strip().split('\n')
     # img_path1 = all_img_list[i]

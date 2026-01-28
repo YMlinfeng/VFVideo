@@ -49,7 +49,7 @@ AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
 OUTPUT_BASE_DIR="output"
 
 # 模型参数
-CKPT_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v4_32gpu/step-700.safetensors" #v4 little data
+CKPT_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v4_32gpu/step-100.safetensors" #v4 little data
 MODEL_ID="Wan-AI/Wan2.2-S2V-14B"
 
 # 推理参数
@@ -104,7 +104,7 @@ mpirun --allow-run-as-root -np $np \
     -x https_proxy \
     -x no_proxy \
     -x MASTER_ADDR=$master_addr \
-    -x MASTER_PORT=29502 \
+    -x MASTER_PORT=29509 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
     -x NCCL_TOPO_FILE \

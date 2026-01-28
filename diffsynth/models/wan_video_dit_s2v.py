@@ -23,17 +23,17 @@ def torch_dfs(model: nn.Module, parent_name='root'):
     return modules, module_names
 
 
-def rope_precompute(x, grid_sizes, freqs, start=None):
-    b, s, n, c = x.size(0), x.size(1), x.size(2), x.size(3) // 2
+def rope_precompute(x, grid_sizes, freqs, start=None): # freqs:(1024,64)
+    b, s, n, c = x.size(0), x.size(1), x.size(2), x.size(3) // 2 # # b=1, s=21000, n=40, c=64（复数频率数量（128/2=64，因为两个实数组成一个复数））
 
     # split freqs
     if type(freqs) is list:
         trainable_freqs = freqs[1]
         freqs = freqs[0]
-    freqs = freqs.split([c - 2 * (c // 3), c // 3, c // 3], dim=1)
+    freqs = freqs.split([c - 2 * (c // 3), c // 3, c // 3], dim=1) # # 分割为: [64 - 42, 21, 21] = [22, 21, 21]
 
-    # loop over samples
-    output = torch.view_as_complex(x.detach().reshape(b, s, n, -1, 2).to(torch.float64))
+    # 为什么用复数？ 因为复数乘法自动实现旋转！
+    output = torch.view_as_complex(x.detach().reshape(b, s, n, -1, 2).to(torch.float64)) # [1, 21000, 40, 128] → [1, 21000, 40, 64, 2] → [1, 21000, 40, 64] (复数)
     seq_bucket = [0]
     if not type(grid_sizes) is list:
         grid_sizes = [grid_sizes]
@@ -63,8 +63,8 @@ def rope_precompute(x, grid_sizes, freqs, start=None):
                     w_sam = np.linspace(w_o.item(), (t_w + w_o).item() - 1, seq_w).astype(int).tolist()
 
                     assert f_o * f >= 0 and h_o * h >= 0 and w_o * w >= 0
-                    freqs_0 = freqs[0][f_sam] if f_o >= 0 else freqs[0][f_sam].conj()
-                    freqs_0 = freqs_0.view(seq_f, 1, 1, -1)
+                    freqs_0 = freqs[0][f_sam] if f_o >= 0 else freqs[0][f_sam].conj() # # 查表！从预计算的频率表中取出对应位置
+                    freqs_0 = freqs_0.view(seq_f, 1, 1, -1) # # 形状: [14, 1, 1, 22]
 
                     freqs_i = torch.cat(
                         [
@@ -73,7 +73,7 @@ def rope_precompute(x, grid_sizes, freqs, start=None):
                             freqs[2][w_sam].view(1, 1, seq_w, -1).expand(seq_f, seq_h, seq_w, -1),
                         ],
                         dim=-1
-                    ).reshape(seq_len, 1, -1)
+                    ).reshape(seq_len, 1, -1) # # 最终: [14, 40, 35, 64]->[19600, 1, 64]
                 elif t_f < 0:
                     freqs_i = trainable_freqs.unsqueeze(1)
                 # apply rotary embedding

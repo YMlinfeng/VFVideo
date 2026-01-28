@@ -484,6 +484,7 @@ class WanVideoPipeline(BasePipeline):
             video = self.vae_output_to_video(video)
         elif output_type == "floatpoint":
             pass
+        # [img.save(f"/m2v_intern/mengzijie/DiffSynth-Studio/output/output_20260127_144600/frame_{i:03d}.png") for i, img in enumerate(video)]
         self.load_models_to_device([])
         return video
 
@@ -519,7 +520,7 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             noise = torch.concat((noise[:, :, -f:], noise[:, :, :-f]), dim=2)
         
-        return {"noise": noise}
+        return {"noise": noise} # ([1, 16, 15, 80, 70])
     
 
 
@@ -668,13 +669,13 @@ class WanVideoUnit_ImageEmbedderFused(PipelineUnit):
         else:
             resized_image = input_image.resize((width, height))
             image = pipe.preprocess_image(resized_image).transpose(0, 1) #（C， B， H， W）
-        # image = (image + 1.0) / 2.0; plt.imsave("output1.png", F.to_pil_image(image.float()))
+        # a = resized_image; a = (a + 1.0) / 2.0; plt.imsave("output1.png", F.to_pil_image(a.float()))
         # import torch; import matplotlib.pyplot as plt; import torchvision.transforms.functional as F; image = image.squeeze(1).to(torch.float32); plt.imsave("output1.png", F.to_pil_image(image))
 
         z = pipe.vae.encode([image], device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)
         # print(f"DEBUG: latents version before assignment: {latents._version}, requires_grad: {latents.requires_grad}")
 
-        latents[:, :, 0: 1] = z
+        latents[:, :, 0: 1] = z # z: ([1, 16, 1, 80, 70])
         # latents = torch.cat([z, latents[:, :, 1:]], dim=2)
 
         # === 插入这里进行观测 ===

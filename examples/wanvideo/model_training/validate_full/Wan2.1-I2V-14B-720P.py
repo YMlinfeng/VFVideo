@@ -16,8 +16,8 @@ pipe = WanVideoPipeline.from_pretrained(
         ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"),
     ],
 )
-state_dict = load_state_dict("models/train/Wan2.1-I2V-14B-720P_full/epoch-1.safetensors")
-pipe.dit.load_state_dict(state_dict)
+# state_dict = load_state_dict("models/train/Wan2.1-I2V-14B-720P_full/epoch-1.safetensors")
+# pipe.dit.load_state_dict(state_dict)
 
 input_image = VideoData("data/example_video_dataset/video1.mp4", height=720, width=1280)[0]
 
