@@ -30,54 +30,41 @@ def FlowMatchSFTLoss_cat(pipe: BasePipeline, **inputs):
     loss = loss * pipe.scheduler.training_weight(timestep) # 不同时间步的难度不同，可能需要不同的权重
     return loss
 
+
 def FlowMatchSFTLoss(pipe: BasePipeline, **inputs):
-    # 1. 采样时间步
     max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * len(pipe.scheduler.timesteps))
     min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * len(pipe.scheduler.timesteps))
+
     timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,))
     timestep = pipe.scheduler.timesteps[timestep_id].to(dtype=pipe.torch_dtype, device=pipe.device)
- 
-    latents = inputs["input_latents"]  # [B, C, F, H, W]
-    B, C, F, H, W = latents.shape
-    noise = torch.randn_like(latents)  # [B, C, F, H, W]
     
-    # 3. 构建 per-frame 的时间步 t: [B, 1, F, 1, 1]
-    #    首帧 t=0（保持干净），其他帧 t=sigma
-    num_train_timesteps = getattr(pipe.scheduler.config, 'num_train_timesteps', 1000)
-    sigma = timestep.float() / num_train_timesteps  # 归一化到 [0, 1]
-    
-    t = torch.zeros(B, 1, F, 1, 1, device=latents.device, dtype=latents.dtype)
-    t[:, :, 1:, :, :] = sigma.view(-1, 1, 1, 1, 1)  # 只有后续帧有噪声
-    
-    # 4. Flow Matching 加噪: x_t = (1-t) * x_0 + t * z
-    #    首帧 (t=0): x_t = x_0 (自然保持干净，无需拼接！)
-    #    其他帧:     x_t = (1-sigma) * x_0 + sigma * z
-    noisy_latents = (1 - t) * latents + t * noise
-    inputs["latents"] = noisy_latents
-    
-    # 5. 训练目标: v = z - x_0 (velocity field)
-    target = noise - latents
-    
-    # 6. 模型预测
+    noise = torch.randn_like(inputs["input_latents"])
+
+    # sigma = pipe.scheduler.sigmas[timestep_id].to(device=pipe.device, dtype=pipe.torch_dtype)
+    sigma = pipe.scheduler.sigmas[timestep_id].item()
+
+    B, C, F, H, W = inputs["input_latents"].shape
+    frame_sigma = torch.ones(B, 1, F, 1, 1, device=pipe.device, dtype=pipe.torch_dtype) * sigma
+    frame_sigma[:, :, 0:1, :, :] = 0  # 首帧 sigma=0，不加噪
+
+    # loss_mask: [B, 1, F, 1, 1]，首帧为0（不参与loss），其他帧为1
+    loss_mask = torch.ones(B, 1, F, 1, 1, device=pipe.device, dtype=pipe.torch_dtype)
+    loss_mask[:, :, 0:1, :, :] = 0  # 首帧不参与loss计算
+
+    # inputs["latents"] = pipe.scheduler.add_noise(inputs["input_latents"], noise, timestep)
+    inputs["latents"] = (1 - frame_sigma) * inputs["input_latents"] + frame_sigma * noise
+    # training_target = pipe.scheduler.training_target(inputs["input_latents"], noise, timestep)
+    training_target = noise - inputs["input_latents"]
+
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
-    pred = pipe.model_fn(**models, **inputs, timestep=timestep)
+    noise_pred = pipe.model_fn(**models, **inputs, timestep=timestep)
+
+    diff = (noise_pred.float() - training_target.float()) ** 2
+    masked_diff = diff * loss_mask
     
-    # 7. 构建 loss mask: [B, 1, F, 1, 1]
-    #    首帧为0（不参与loss），其他帧为1
-    loss_mask = torch.zeros(B, 1, F, 1, 1, device=latents.device, dtype=latents.dtype)
-    loss_mask[:, :, 1:, :, :] = 1.0
-    
-    # 8. 计算 Masked MSE Loss
-    diff_sq = (pred.float() - target.float()) ** 2  # [B, C, F, H, W]
-    masked_diff = diff_sq * loss_mask  # broadcast: [B, C, F, H, W]
-    
-    # 归一化：只除以有效元素数量（排除首帧）
-    num_valid_frames = F - 1
-    loss = masked_diff.sum() / (B * C * num_valid_frames * H * W)
-    
-    # 9. 时间步加权
+    loss = masked_diff.sum() / (loss_mask.sum() * C * H * W)
+    # loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
     loss = loss * pipe.scheduler.training_weight(timestep)
-    
     return loss
 
 def DirectDistillLoss(pipe: BasePipeline, **inputs):

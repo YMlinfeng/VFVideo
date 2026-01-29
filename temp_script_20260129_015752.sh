@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
@@ -73,5 +74,5 @@ mpirun --allow-run-as-root -np $np \
       --gradient_accumulation_steps 1 \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
-python /ytech_milm/chenming09/codes/check_gpu_big.py
+$HOSTNAME_WRAPPER python /ytech_milm/chenming09/codes/check_gpu_big.py
 sleep 100d;

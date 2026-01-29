@@ -162,7 +162,7 @@ class FlowMatchScheduler():
         return model_output
     
     def add_noise(self, original_samples, noise, timestep):
-        if isinstance(timestep, torch.Tensor):
+        if isinstance(timestep, torch.Tensor): # tensor([732.], device='cuda:0', dtype=torch.bfloat16)
             timestep = timestep.cpu()
         timestep_id = torch.argmin((self.timesteps - timestep).abs())
         sigma = self.sigmas[timestep_id]
