@@ -631,13 +631,15 @@ def launch_training_task(
     
     if debug:
         diagnose_default_training_status(model)
-    # optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     optimizer_grouped_parameters = prepare_model_and_optimizer_groups(
         model, 
         base_lr=1e-5, 
+        # base_lr = 0,
         target_lr=learning_rate
     )
     optimizer = torch.optim.AdamW(optimizer_grouped_parameters, weight_decay=weight_decay)
+    # optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
+    print(f"Trainable modules: {len(list(model.trainable_modules()))}")
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=False, collate_fn=lambda x: x[0], num_workers=num_workers) if debug else torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
     

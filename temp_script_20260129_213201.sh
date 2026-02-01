@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
@@ -14,12 +15,10 @@ export http_proxy=http://10.66.16.238:11080
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
-export PATH=/opt/xray/deps:$PATH
 export ACCELERATE_CONFIG_FILE="/m2v_intern/mengzijie/DiffSynth-Studio/examples/wanvideo/model_training/full/accelerate_config_14B_multigpu.yaml"
 export DEEPSPEED_FORCE_MULTI_NODE=1
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
-# export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 cat $ACCELERATE_CONFIG_FILE
 
 # 3. 准备 Python 启动指令
@@ -47,7 +46,7 @@ mpirun --allow-run-as-root -np $np \
     -x https_proxy \
     -x no_proxy \
     -x MASTER_ADDR=$master_addr \
-    -x MASTER_PORT=29511 \
+    -x MASTER_PORT=29503 \
     -x ACCELERATE_CONFIG_FILE \
     -x DEEPSPEED_FORCE_MULTI_NODE \
     -x WORLD_SIZE=$np \
@@ -56,7 +55,7 @@ mpirun --allow-run-as-root -np $np \
       --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/emo_ge81f_verified.csv" \
       --data_file_keys "video_path,audio_path" \
       --dataset_num_workers 4 \
-      --save_steps 50 \
+      --save_steps 200 \
       --height 640 \
       --width 560 \
       --tgt_fps 15 \
@@ -69,41 +68,39 @@ mpirun --allow-run-as-root -np $np \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v6_zhiling_32gpu" \
+      --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v6_32gpu" \
       --extra_inputs "input_image,input_audio" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
-# --trainable_models "dit.audio_injector" \
 
-# mpirun --allow-run-as-root -np $np \
-#     -mca plm_rsh_args "-p ${Port}" \
-#     -hostfile $hostfile \
-#     -bind-to none -map-by slot \
-#     --mca btl tcp,self \
-#     -x HOROVOD_MPI_THREADS_DISABLE=1 \
-#     -x MPI_THREAD_SINGLE=1 \
-#     -x NCCL_IB_DISABLE=0 \
-#     -x NCCL_IB_GID_INDEX=3 \
-#     -x NCCL_MIN_NCHANNELS=16 \
-#     -x NCCL_IB_HCA=mlx5 \
-#     -x NCCL_IB_QPS_PER_CONNECTION=4 \
-#     -x NCCL_IB_TIMEOUT=32 \
-#     -x NCCL_DEBUG=INFO \
-#     -x PATH \
-#     -x LD_LIBRARY_PATH \
-#     -x http_proxy \
-#     -x https_proxy \
-#     -x no_proxy \
-#     -x MASTER_ADDR=$master_addr \
-#     -x MASTER_PORT=29503 \
-#     -x ACCELERATE_CONFIG_FILE \
-#     -x DEEPSPEED_FORCE_MULTI_NODE \
-#     -x WORLD_SIZE=$np \
-#     -x NCCL_TOPO_FILE \
-#     $PYTHON_EXE -u /ytech_milm/chenming09/codes/check_gpu_big.py \
-#     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
+mpirun --allow-run-as-root -np $np \
+    -mca plm_rsh_args "-p ${Port}" \
+    -hostfile $hostfile \
+    -bind-to none -map-by slot \
+    --mca btl tcp,self \
+    -x HOROVOD_MPI_THREADS_DISABLE=1 \
+    -x MPI_THREAD_SINGLE=1 \
+    -x NCCL_IB_DISABLE=0 \
+    -x NCCL_IB_GID_INDEX=3 \
+    -x NCCL_MIN_NCHANNELS=16 \
+    -x NCCL_IB_HCA=mlx5 \
+    -x NCCL_IB_QPS_PER_CONNECTION=4 \
+    -x NCCL_IB_TIMEOUT=32 \
+    -x NCCL_DEBUG=INFO \
+    -x PATH \
+    -x LD_LIBRARY_PATH \
+    -x http_proxy \
+    -x https_proxy \
+    -x no_proxy \
+    -x MASTER_ADDR=$master_addr \
+    -x MASTER_PORT=29503 \
+    -x ACCELERATE_CONFIG_FILE \
+    -x DEEPSPEED_FORCE_MULTI_NODE \
+    -x WORLD_SIZE=$np \
+    $PYTHON_EXE -u /ytech_milm/chenming09/codes/check_gpu_big.py \
+    2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
 
-# sleep 100d;
+sleep 100d;

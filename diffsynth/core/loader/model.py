@@ -148,10 +148,7 @@ def load_model(model_class, path, config=None, torch_dtype=torch.bfloat16, devic
 
         # 2. 选择一种方式初始化音频模块
         # 方式一（推荐）： 
-        # zero_init_controlnet_style(model)
-
-        # 方式二：
-        # zero_init_all(model)
+        zero_init_controlnet_style(model)
 
         # model.load_state_dict(state_dict, assign=True)  # old version
 

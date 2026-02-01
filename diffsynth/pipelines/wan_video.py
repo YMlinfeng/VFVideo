@@ -1568,6 +1568,5 @@ def model_fn_wans2v(
     x = x[:, :seq_len_x_global]
     x = dit.head(x, t[:-1]) # torch.Size([1, 16800, 64]) head 是一个全连接层,把 Transformer 那个很厚（1536维）的抽象特征，投影回我们需要的像素特征维度
     x = dit.unpatchify(x, (f, h, w)) # torch.Size([1, 16, 14, 80, 60])
-    # make compatible with wan video, # 把原始的首帧 (origin_ref_latents) 拼回去，组成完整的视频流返回
     x = torch.cat([origin_ref_latents, x], dim=2)
     return x # [1, 16, 15, 80, 60]

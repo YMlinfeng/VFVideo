@@ -19,7 +19,7 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --tokenizer_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl" \
   --learning_rate 1e-4 \
   --num_epochs 1 \
-  --trainable_models "dit" \
+  --trainable_models "dit.audio_injector" \
   --remove_prefix_in_ckpt "pipe.dit." \
   --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/Wan2.2-S2V-14B_debug_singlegpu" \
   --extra_inputs "input_image,input_audio" \

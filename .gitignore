@@ -12,6 +12,7 @@ logs
 models/
 data
 *.csv
+*.json*
 __pycache__
 *.pyc
 .git

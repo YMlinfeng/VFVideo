@@ -13,6 +13,9 @@ export CUDA_VISIBLE_DEVICES=0
 export http_proxy=http://10.66.16.238:11080 
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
+export http_proxy=http://oversea-squid2.ko.txyun:11080 
+export https_proxy=http://oversea-squid2.ko.txyun:11080 
+export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
@@ -36,14 +39,14 @@ AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio"
 OUTPUT_BASE_DIR="output"
 
 # 模型参数
-CKPT_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v4_32gpu/step-10000.safetensors"
+CKPT_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v6_dongzhuganzhiling_32gpu/step-10000.safetensors"
 MODEL_ID="Wan-AI/Wan2.2-S2V-14B"
 
 # 推理参数
-NUM_FRAMES=25
-HEIGHT=720
-WIDTH=640
-NUM_INFERENCE_STEPS=1
+NUM_FRAMES=57
+HEIGHT=640
+WIDTH=560
+NUM_INFERENCE_STEPS=40
 SEED=0
 FPS=16
 QUALITY=5
@@ -56,7 +59,7 @@ cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # 确保日志目录存在
-mkdir -p logs
+# mkdir -p logs
 
 echo "=============================================="
 echo "Starting Single GPU Inference..."

@@ -162,11 +162,17 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
 
-    def debug_parameters(self):
-        print("=== Debugging Parameters ===")
-        for name, param in self.named_parameters():
-            print(f"{name}: requires_grad={param.requires_grad}, grad_fn={param.grad_fn}")
-        print("=== End Debug ===")
+    def debug_parameters(self, save_path="debug_params.txt"):
+        # "w" 模式表示每次调用都会覆盖文件。
+        # 如果你想追加内容（比如在训练循环中多次打印），请把 "w" 改为 "a"
+        with open(save_path, "w") as f:
+            print("=== Debugging Parameters ===", file=f)
+            for name, param in self.named_parameters():
+                # 直接将内容输出到文件对象 f 中
+                print(f"{name}: requires_grad={param.requires_grad}, grad_fn={param.grad_fn}", file=f)
+            print("=== End Debug ===", file=f)
+        
+        print(f"Debug info saved to {save_path}") # 在控制台提示一下已保存
         
 
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
@@ -241,18 +247,20 @@ def wan_parser():
 
 
 if __name__ == "__main__":
-    # if os.environ.get("LOCAL_RANK", "0") == "0":
-    #     print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
-    #     print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
-    #     import debugpy
-    #     debugpy.listen(("0.0.0.0", 5678))
-    #     print("=" * 50)
-    #     print("Waiting for debugger to attach on port 5678...")
-    #     print("=" * 50)
-    #     debugpy.wait_for_client()  
-    #     print("Debugger attached! Continuing...")
     parser = wan_parser()
     args = parser.parse_args()
+    if args.debug:
+        if os.environ.get("LOCAL_RANK", "0") == "0":
+            print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
+            print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
+            import debugpy
+            debugpy.listen(("0.0.0.0", 5678))
+            print("=" * 50)
+            print("Waiting for debugger to attach on port 5678...")
+            print("=" * 50)
+            debugpy.wait_for_client()  
+            print("Debugger attached! Continuing...")
+    print("start training")
     deepspeed_plugin = DeepSpeedPlugin(
         zero_stage=2,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
