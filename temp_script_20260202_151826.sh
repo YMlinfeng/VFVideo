@@ -57,7 +57,7 @@ mpirun --allow-run-as-root -np $np \
       --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/emo_ge81f_verified.csv" \
       --data_file_keys "video_path,audio_path" \
       --dataset_num_workers 4 \
-      --save_steps 50 \
+      --save_steps 100 \
       --height 640 \
       --width 560 \
       --tgt_fps 15 \
@@ -70,7 +70,7 @@ mpirun --allow-run-as-root -np $np \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/train/s2v_v6_zhiling_32gpu" \
+      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v7.3_32gpu" \
       --extra_inputs "input_image,input_audio" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \

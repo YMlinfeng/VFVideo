@@ -249,18 +249,18 @@ def wan_parser():
 if __name__ == "__main__":
     parser = wan_parser()
     args = parser.parse_args()
-    if args.debug:
-        if os.environ.get("LOCAL_RANK", "0") == "0":
-            print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
-            print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
-            import debugpy
-            debugpy.listen(("0.0.0.0", 5678))
-            print("=" * 50)
-            print("Waiting for debugger to attach on port 5678...")
-            print("=" * 50)
-            debugpy.wait_for_client()  
-            print("Debugger attached! Continuing...")
-    print("start training")
+    # if args.debug:
+    #     if os.environ.get("LOCAL_RANK", "0") == "0":
+    #         print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
+    #         print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
+    #         import debugpy
+    #         debugpy.listen(("0.0.0.0", 5678))
+    #         print("=" * 50)
+    #         print("Waiting for debugger to attach on port 5678...")
+    #         print("=" * 50)
+    #         debugpy.wait_for_client()  
+    #         print("Debugger attached! Continuing...")
+    # print("start training")
     deepspeed_plugin = DeepSpeedPlugin(
         zero_stage=2,
         gradient_accumulation_steps=args.gradient_accumulation_steps,

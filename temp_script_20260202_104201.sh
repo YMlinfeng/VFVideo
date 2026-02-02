@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
@@ -67,9 +68,9 @@ mpirun --allow-run-as-root -np $np \
       --tokenizer_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl" \
       --learning_rate 1e-4 \
       --num_epochs 10 \
-      --trainable_models "dit" \
+      --trainable_models "dit.audio_injector" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v7.3_32gpu" \
+      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v7.2_32gpu" \
       --extra_inputs "input_image,input_audio" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \

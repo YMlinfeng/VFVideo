@@ -422,6 +422,7 @@ def save_inference_config(output_dir, args, rank):
     print(f"[INFO] Saved config to: {config_path}")
 
 def log_inference_detail(output_dir, video_name, image_path, audio_path, prompt, negative_prompt, rank):
+    return 
     """
     记录每次推理的详细信息到日志文件
     """
