@@ -49,7 +49,7 @@ AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
 OUTPUT_BASE_DIR="output"
 
 # 模型参数
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v7.2_32gpu/step-2700.safetensors" #v5
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v8.1/step-1500.safetensors" #v5
 MODEL_ID="Wan-AI/Wan2.2-S2V-14B"
 
 # 推理参数
