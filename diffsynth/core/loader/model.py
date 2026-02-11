@@ -18,7 +18,8 @@ def zero_init_controlnet_style(model):
     
     for name, param in model.named_parameters():
         # 检查参数名是否以前缀开头
-        if any(name.startswith(prefix) for prefix in target_prefixes) and ".o." in name:
+        # if any(name.startswith(prefix) for prefix in target_prefixes) and ".o." in name:
+        if any(name.startswith(prefix) for prefix in target_prefixes):
             with torch.no_grad():
                 param.zero_()  # 核心操作：全部填 0
                 zero_count += 1

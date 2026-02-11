@@ -325,7 +325,7 @@ if __name__ == "__main__":
         min_timestep_boundary=args.min_timestep_boundary,
     )
     accelerator.wait_for_everyone()
-    # model.debug_parameters()
+    model.debug_parameters()
     model_logger = ModelLogger(
         args.output_path,
         remove_prefix_in_ckpt=args.remove_prefix_in_ckpt,

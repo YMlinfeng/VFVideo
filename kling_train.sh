@@ -25,5 +25,6 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --extra_inputs "input_image,input_audio" \
   --offload_optimizer_device "cpu" \
   --debug \
+2>&1 | tee logs/[Debug]_wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
   # --use_gradient_checkpointing_offload \
   # --model_id_with_origin_paths "Wan-AI/Wan2.2-S2V-14B:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-S2V-14B:wav2vec2-large-xlsr-53-english/model.safetensors,Wan-AI/Wan2.2-S2V-14B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-S2V-14B:Wan2.1_VAE.pth" \

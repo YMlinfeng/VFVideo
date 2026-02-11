@@ -26,7 +26,7 @@ cd /m2v_intern/mengzijie/DiffSynth-Studio/
 ##--------------------------##
 # cd /ytech_milm_disk2/tangsonglin05/exp/online_service/human-motion-pe/
 # VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=2,3  python i2v_v4_infer_motion_image_direction_set_seed.py --csv_path /ytech_milm/mengzijie/DiffSynth-Studio/movement/Mzj54.csv
-
+# /ytech_milm_disk2/tangsonglin05/exp/online_service/human-motion-pe# 
 
 
 
