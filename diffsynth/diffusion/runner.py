@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 from datetime import datetime
 import statistics
+import json
 
 
 class DetailedStepTimer:
@@ -655,7 +656,7 @@ def launch_training_task(
             
             for step_index, data in enumerate(tqdm(dataloader, desc=f"Epoch {epoch_id}", 
                                                     disable=not accelerator.is_main_process)):
-                if step_index > 14:
+                if step_index > 1000:
                     break
                 # for i, group in enumerate(optimizer.param_groups):
                 #     print(f"Group {i} ({group.get('name', 'unnamed')}): lr = {group['lr']}")
@@ -678,6 +679,7 @@ def launch_training_task(
                         optimizer.zero_grad()
                     
                     with timer.time_step("forward"):
+                        json.dump(data, open(f"data/datalossdebug/data{step_index}.txt", "w"), indent=2, default=str)
                         loss = model(data)
                     
                     # === 关键：分离 backward 计算和梯度同步 ===
