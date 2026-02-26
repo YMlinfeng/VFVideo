@@ -1,4 +1,3 @@
-# export MODELSCOPE_CACHE=/m2v_intern/mengzijie/Wan2.2/
 export http_proxy=http://10.66.16.238:11080 https_proxy=http://10.66.16.238:11080 no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PYTHONWARNINGS="ignore::FutureWarning"
