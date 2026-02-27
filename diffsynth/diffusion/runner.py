@@ -639,7 +639,14 @@ def launch_training_task(
     #     target_lr=learning_rate
     # )
     # optimizer = torch.optim.AdamW(optimizer_grouped_parameters, weight_decay=weight_decay)
-    optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
+    # optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
+    if args.debug:
+        import bitsandbytes as bnb
+        optimizer = bnb.optim.AdamW8bit(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
+        print("[Debug] 使用8bit优化器以节省内存")
+    else:
+        # optimizer = torch.optim.AdamW(optimizer_grouped_parameters, weight_decay=weight_decay)
+        optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     print(f"Trainable modules: {len(list(model.trainable_modules()))}")
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=False, collate_fn=lambda x: x[0], num_workers=num_workers) if debug else torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
@@ -679,7 +686,7 @@ def launch_training_task(
                         optimizer.zero_grad()
                     
                     with timer.time_step("forward"):
-                        json.dump(data, open(f"data/datalossdebug/data{step_index}.txt", "w"), indent=2, default=str)
+                        # json.dump(data, open(f"data/datalossdebug/data{step_index}.txt", "w"), indent=2, default=str)
                         loss = model(data)
                     
                     # === 关键：分离 backward 计算和梯度同步 ===

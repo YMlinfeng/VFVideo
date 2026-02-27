@@ -5,6 +5,7 @@ export PYTHONWARNINGS="ignore::FutureWarning"
 accelerate launch --config_file examples/wanvideo/model_training/full/accelerate_config_14B.yaml examples/wanvideo/model_training/train.py \
   --dataset_base_path "" \
   --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/emo_ge81f_verified.csv" \
+  --data_file_keys "video_path" \
   --dataset_num_workers 0 \
   --save_steps 100 \
   --height 480 \

@@ -597,7 +597,11 @@ class WanVideoUnit_ImageEmbedderCLIP(PipelineUnit):
         if input_image is None or pipe.image_encoder is None or not pipe.dit.require_clip_embedding:
             return {}
         pipe.load_models_to_device(self.onload_model_names)
-        image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
+        if isinstance(input_image, torch.Tensor): #todo check是否在GPU上
+            resized_image = F.resize(input_image, (height, width)) 
+            image = resized_image.unsqueeze(0).to(pipe.device)
+        else:    
+            image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
         clip_context = pipe.image_encoder.encode_image([image])
         if end_image is not None:
             end_image = pipe.preprocess_image(end_image.resize((width, height))).to(pipe.device)
@@ -620,7 +624,11 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
         if input_image is None or not pipe.dit.require_vae_embedding:
             return {}
         pipe.load_models_to_device(self.onload_model_names)
-        image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
+        if isinstance(input_image, torch.Tensor): 
+            resized_image = F.resize(input_image, (height, width)) 
+            image = resized_image.unsqueeze(0).to(pipe.device)
+        else:    
+            image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
         msk = torch.ones(1, num_frames, height//8, width//8, device=pipe.device)
         msk[:, 1:] = 0
         if end_image is not None:
@@ -641,7 +649,7 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
         y = y.to(dtype=pipe.torch_dtype, device=pipe.device)
         
         # 确保y张量不会在后续梯度计算中被in-place修改111
-        y = y.clone().detach().requires_grad_(True)
+        # y = y.clone().detach().requires_grad_(True)
         
         return {"y": y}
 
@@ -1535,6 +1543,8 @@ def model_fn_wans2v(
         return custom_forward
 
     for block_id, block in enumerate(dit.blocks): #这部分的off-load比较浪费时间:30s
+        # if block_id > 2:
+        #     break
         if use_gradient_checkpointing_offload:
             with torch.autograd.graph.save_on_cpu():
                 x = torch.utils.checkpoint.checkpoint(
