@@ -10,7 +10,7 @@ set -e  # 出错即退出
 export http_proxy=http://10.66.16.238:11080 
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
-if [ "${X_ROLE}" == "launcher" ] || [ "${ROLE_NAME}" == "master" ]; then wget https://halo.corp.kuaishou.com/api/cloud-storage/v1/public-objects/user-cloud-storage/xray/install_xray.sh -O install_xray.sh && bash install_xray.sh "all"; fi && if [[ "$PATH" != "/opt/xray/deps"* ]]; then export PATH=/opt/xray/deps:$PATH; fi;
+# if [ "${X_ROLE}" == "launcher" ] || [ "${ROLE_NAME}" == "master" ]; then wget https://halo.corp.kuaishou.com/api/cloud-storage/v1/public-objects/user-cloud-storage/xray/install_xray.sh -O install_xray.sh && bash install_xray.sh "all"; fi && if [[ "$PATH" != "/opt/xray/deps"* ]]; then export PATH=/opt/xray/deps:$PATH; fi;
 hostfile=/etc/mpi/hostfile
 Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
 
@@ -51,7 +51,8 @@ OUTPUT_BASE_DIR="output"
 
 # 模型参数
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v8.1/step-1500.safetensors" #v5
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1400.safetensors" #
+# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1400.safetensors" #
+CKPT_PATH=""
 MODEL_ID="PAI/Wan2.1-Fun-14B-InP"
 
 # 推理参数

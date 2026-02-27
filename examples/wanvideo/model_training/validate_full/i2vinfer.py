@@ -267,7 +267,7 @@ def load_pipeline(args, device):
     """
     pipe = WanVideoPipeline.from_pretrained(
         torch_dtype=torch.bfloat16,
-        device="cuda",
+        device=device,
         model_configs=[ #todo model_id到底叫啥
             ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="diffusion_pytorch_model*.safetensors"),
             ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"),
@@ -342,7 +342,7 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt):
         num_frames=args.num_frames,
         height=args.height,
         width=args.width,
-        # tiled=True,
+        tiled=True,
         # audio_sample_rate=sample_rate,
         # input_audio=input_audio,
         num_inference_steps=args.num_inference_steps
