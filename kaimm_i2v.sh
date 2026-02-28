@@ -104,4 +104,4 @@ mpirun --allow-run-as-root -np $np \
 #     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
 
-# sleep 100d;
+# sleep 1000d;
