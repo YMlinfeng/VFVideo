@@ -1478,9 +1478,14 @@ def model_fn_wan_video(
         # Grid 在时间上在前面，所以拼在前面
         x = torch.cat([grid_tokens, x], dim=1)
         freqs = torch.cat([grid_freqs, freqs], dim=0)
+        
+        # 记录 grid tokens 的长度，以便在最后剔除
+        grid_seq_len = grid_tokens.shape[1]
+    else:
+        grid_seq_len = 0
     # ===================================
 
-    # VAP 
+    # VAP
     if vap is not None:
         # hidden state
         x_vap = vap_hidden_state
@@ -1586,6 +1591,14 @@ def model_fn_wan_video(
         if dist.is_initialized() and dist.get_world_size() > 1:
             x = get_sp_group().all_gather(x, dim=1)
             x = x[:, :-pad_shape] if pad_shape > 0 else x
+            
+    # ========== 移除 ID Grid tokens ==========
+    # 模型输出后，我们需要把之前强行塞进去的 grid tokens 剔除，
+    # 否则 unpatchify 会因为序列长度不匹配而报错。
+    if grid_seq_len > 0:
+        x = x[:, grid_seq_len:]
+    # =========================================
+
     # Remove reference latents
     if reference_latents is not None:
         x = x[:, reference_latents.shape[1]:]
