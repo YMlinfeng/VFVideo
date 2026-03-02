@@ -91,21 +91,6 @@ def interpolate_bboxes(sparse_dict, kind='linear'):
 class FaceGrid:
     def __init__(self, model_path=None):
         self.face_idx = [i for i in range(24,92)] 
-        # self.wrinkle_mask = cv2.imread("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/test_edge.png").astype("float32") / 255
-        # self.wrinkle_mask = cv2.imread("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/edges/edge_laplacian.png").astype("float32") / 255
-        # self.wrinkle_mask = cv2.imread("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/edges/edge_canny.png").astype("float32") / 255
-        self.wrinkle = cv2.imread("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/skin.png")
-        self.wrinkle_mask = cv2.imread("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/edges/edge_canny.png")
-        self.wrinkle_mask = cv2.resize(self.wrinkle_mask, (self.wrinkle.shape[1], self.wrinkle.shape[0]))
-        self.wrinkle_mask[self.wrinkle_mask>128]=255
-        self.wrinkle_mask[self.wrinkle_mask<=50]=0
-        kernel = np.ones((3, 3), np.uint8)
-        # self.wrinkle_mask = cv2.erode(self.wrinkle_mask, kernel, iterations=1)
-        self.wrinkle_mask = cv2.dilate(self.wrinkle_mask, kernel, iterations=6)
-        self.wrinkle_mask = self.wrinkle_mask.astype("float32") / 255
-
-        self.wrinkle_mask = self.wrinkle_mask*self.wrinkle
-        # cv2.imwrite('/m2v_intern/mengzijie/DiffSynth-Studio/debug_wrinkle_mask.png', self.wrinkle_mask.astype(np.uint8))
 
     def load_pose(self, pose_path, height, width, ori_fps, tgt_fps, clip_start_idx=0, clip_length=None):
         if '.json' in pose_path:
@@ -437,141 +422,144 @@ class FaceGrid:
 
 
 
-    def _apply_wrinkle(self, img_ori, wrinkle_list, lms_i_new):
-        """
-        添加皱纹纹理
-        返回一个 mask，表示皱纹的强度（0-1）
-        """
-        h, w = img_ori.shape[:2]
+    # def _apply_wrinkle(self, img_ori, wrinkle_list, lms_i_new):
+    #     """
+    #     添加皱纹纹理
+    #     返回一个 mask，表示皱纹的强度（0-1）
+    #     """
+    #     h, w = img_ori.shape[:2]
         
-        if not wrinkle_list:
-            return np.zeros((h, w, 3), dtype="float32")
+    #     if not wrinkle_list:
+    #         return np.zeros((h, w, 3), dtype="float32")
         
-        # 最终的皱纹mask
-        img0 = np.zeros((h, w, 3), dtype="float32")
+    #     # 最终的皱纹mask
+    #     img0 = np.zeros((h, w, 3), dtype="float32")
         
-        # 加载并预处理皱纹纹理图
-        wrinkle_mask = self.wrinkle_mask.copy()
-        # wrinkle_mask = wrinkle_mask / wrinkle_mask.max()  # 归一化到 0-1
-        wrinkle_mask = cv2.resize(wrinkle_mask, (w, h), interpolation=cv2.INTER_LINEAR)
+    #     # 加载并预处理皱纹纹理图
+    #     wrinkle_mask = self.wrinkle_mask.copy()
+    #     # wrinkle_mask = wrinkle_mask / wrinkle_mask.max()  # 归一化到 0-1
+    #     wrinkle_mask = cv2.resize(wrinkle_mask, (w, h), interpolation=cv2.INTER_LINEAR)
         
-        # kernel = np.ones((3, 3), np.uint8)
-        # wrinkle_mask = cv2.dilate(wrinkle_mask, kernel, iterations=1)
+    #     # kernel = np.ones((3, 3), np.uint8)
+    #     # wrinkle_mask = cv2.dilate(wrinkle_mask, kernel, iterations=1)
         
-        # 平铺3x3，确保偏移采样时不越界
-        wrinkle_mask = np.tile(wrinkle_mask, (3, 3, 1))
+    #     # 平铺3x3，确保偏移采样时不越界
+    #     wrinkle_mask = np.tile(wrinkle_mask, (3, 3, 1))
         
-        fw = np.max(lms_i_new[:, 0]) - np.min(lms_i_new[:, 0])
-        fh = np.max(lms_i_new[:, 1]) - np.min(lms_i_new[:, 1])
+    #     fw = np.max(lms_i_new[:, 0]) - np.min(lms_i_new[:, 0])
+    #     fh = np.max(lms_i_new[:, 1]) - np.min(lms_i_new[:, 1])
         
-        for wrinkle in wrinkle_list:
-            # 计算皱纹中心位置
-            cx = int(wrinkle['rel_x'] * fw + lms_i_new[30, 0])
-            cy = int(wrinkle['rel_y'] * fh + lms_i_new[30, 1])
+    #     for wrinkle in wrinkle_list:
+    #         # 计算皱纹中心位置
+    #         cx = int(wrinkle['rel_x'] * fw + lms_i_new[30, 0])
+    #         cy = int(wrinkle['rel_y'] * fh + lms_i_new[30, 1])
             
-            # 计算在平铺纹理中的采样偏移
-            Cx = int(-cx + 2 * w + wrinkle["shift"] * w)
-            Cy = int(-cy + 2 * h + wrinkle["shift"] * h)
+    #         # 计算在平铺纹理中的采样偏移
+    #         Cx = int(-cx + 2 * w + wrinkle["shift"] * w)
+    #         Cy = int(-cy + 2 * h + wrinkle["shift"] * h)
             
-            blur_k = wrinkle['blur_k']
-            radius = wrinkle['radius']
+    #         blur_k = wrinkle['blur_k']
+    #         radius = wrinkle['radius']
             
-            # 边界检查
-            if cx < radius or cx > w - radius or cy < radius or cy > h - radius:
-                continue
+    #         # 边界检查
+    #         if cx < radius or cx > w - radius or cy < radius or cy > h - radius:
+    #             continue
             
-            # 检查采样索引是否有效
-            y_start, y_end = Cy - h // 2, Cy + h - (h // 2)
-            x_start, x_end = Cx - w // 2, Cx + w - (w // 2)
+    #         # 检查采样索引是否有效
+    #         y_start, y_end = Cy - h // 2, Cy + h - (h // 2)
+    #         x_start, x_end = Cx - w // 2, Cx + w - (w // 2)
             
-            if y_start < 0 or x_start < 0 or y_end > wrinkle_mask.shape[0] or x_end > wrinkle_mask.shape[1]:
-                continue
+    #         if y_start < 0 or x_start < 0 or y_end > wrinkle_mask.shape[0] or x_end > wrinkle_mask.shape[1]:
+    #             continue
             
-            # 从平铺纹理中采样当前区域
-            wrinkle_mask_i = wrinkle_mask[y_start:y_end, x_start:x_end].copy()
+    #         # 从平铺纹理中采样当前区域
+    #         wrinkle_mask_i = wrinkle_mask[y_start:y_end, x_start:x_end].copy()
             
-            angle = wrinkle.get('angle', (cx * 7 + cy * 13) % 360)  # 固定但看起来随机
-            center = (w // 2, h // 2)
-            rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-            wrinkle_mask_i = cv2.warpAffine(wrinkle_mask_i, rotation_matrix, (w, h),
-                                            borderMode=cv2.BORDER_WRAP)
+    #         angle = wrinkle.get('angle', (cx * 7 + cy * 13) % 360)  # 固定但看起来随机
+    #         center = (w // 2, h // 2)
+    #         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    #         wrinkle_mask_i = cv2.warpAffine(wrinkle_mask_i, rotation_matrix, (w, h),
+    #                                         borderMode=cv2.BORDER_WRAP)
 
-            # wrinkle_mask_i = cv2.GaussianBlur(wrinkle_mask_i, (blur_k, blur_k), 0)
-            # wrinkle_mask_i = wrinkle_mask_i - low_freq  # 高频部分
-            # wrinkle_mask_i = np.clip(wrinkle_mask_i, 0, 1)  # 只保留正向（皱纹线条）
+    #         # wrinkle_mask_i = cv2.GaussianBlur(wrinkle_mask_i, (blur_k, blur_k), 0)
+    #         # wrinkle_mask_i = wrinkle_mask_i - low_freq  # 高频部分
+    #         # wrinkle_mask_i = np.clip(wrinkle_mask_i, 0, 1)  # 只保留正向（皱纹线条）
             
-            # 创建圆形渐变mask，限制皱纹显示区域
-            # circle_mask = np.zeros((h, w), dtype="float32")
-            # cv2.circle(circle_mask, (cx, cy), radius, 1.0, -1, cv2.LINE_AA)
-            circle_mask = np.zeros((h, w), dtype="float32")
-            cv2.ellipse(circle_mask, (cx, cy), (radius*2, radius), angle, angle, 360-angle, 1.0, -1, cv2.LINE_AA)
-            # # 高斯模糊使边缘平滑过渡
-            # blur_k_odd = blur_k if blur_k % 2 == 1 else blur_k + 1
-            # circle_mask = cv2.GaussianBlur(circle_mask, (blur_k_odd, blur_k_odd), 0)
-            circle_mask = circle_mask[:, :, np.newaxis]  # 扩展维度 [h, w, 1]
+    #         # 创建圆形渐变mask，限制皱纹显示区域
+    #         # circle_mask = np.zeros((h, w), dtype="float32")
+    #         # cv2.circle(circle_mask, (cx, cy), radius, 1.0, -1, cv2.LINE_AA)
+    #         circle_mask = np.zeros((h, w), dtype="float32")
+    #         cv2.ellipse(circle_mask, (cx, cy), (radius*2, radius), angle, angle, 360-angle, 1.0, -1, cv2.LINE_AA)
+    #         # # 高斯模糊使边缘平滑过渡
+    #         # blur_k_odd = blur_k if blur_k % 2 == 1 else blur_k + 1
+    #         # circle_mask = cv2.GaussianBlur(circle_mask, (blur_k_odd, blur_k_odd), 0)
+    #         circle_mask = circle_mask[:, :, np.newaxis]  # 扩展维度 [h, w, 1]
             
-            # 直接用皱纹纹理乘以圆形mask
-            local_wrinkle = wrinkle_mask_i * circle_mask
+    #         # 直接用皱纹纹理乘以圆形mask
+    #         local_wrinkle = wrinkle_mask_i * circle_mask
             
-            # 累加到总mask（取最大值避免重叠区域过暗）
-            # img0[local_wrinkle>0] = local_wrinkle[local_wrinkle>0]
-            img0 = np.maximum(img0, local_wrinkle)
+    #         # 累加到总mask（取最大值避免重叠区域过暗）
+    #         # img0[local_wrinkle>0] = local_wrinkle[local_wrinkle>0]
+    #         img0 = np.maximum(img0, local_wrinkle)
 
-        return img0
+    #     return img0
     
-    def process_wrinkle(self, img, params, lms_i_new=None, frame_idx=0):
-        """
-        仿照 process_pimple 的逻辑处理皱纹
-        """
-        img_ori = img.copy()
-        brightness_delta = params['b']
-        contrast_factor = params['c']
-        saturation_factor = params['s']
-        wrinkle_list = params['wrinkle_list']
+    # def process_wrinkle(self, img, params, lms_i_new=None, frame_idx=0):
+    #     """
+    #     仿照 process_pimple 的逻辑处理皱纹
+    #     """
+    #     img_ori = img.copy()
+    #     brightness_delta = params['b']
+    #     contrast_factor = params['c']
+    #     saturation_factor = params['s']
+    #     wrinkle_list = params['wrinkle_list']
 
-        if brightness_delta == 0 and contrast_factor == 1.0 and saturation_factor == 1.0:
-            return img
+    #     if brightness_delta == 0 and contrast_factor == 1.0 and saturation_factor == 1.0:
+    #         return img
 
-        # --- 步骤 A: 亮度和对比度 ---
-        img = img.astype(np.float32)
-        img = img * contrast_factor + brightness_delta
-        img = np.clip(img, 0, 255)
+    #     # --- 步骤 A: 亮度和对比度 ---
+    #     img = img.astype(np.float32)
+    #     img = img * contrast_factor + brightness_delta
+    #     img = np.clip(img, 0, 255)
 
-        # --- 步骤 B: 饱和度 ---
-        if abs(saturation_factor - 1.0) > 0.01:
-            img = img.astype(np.uint8)
-            hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv_img[..., 1] *= saturation_factor
-            hsv_img[..., 1] = np.clip(hsv_img[..., 1], 0, 255)
-            hsv_img = hsv_img.astype(np.uint8)
-            img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
-        else:
-            img = img.astype(np.uint8)
+    #     # --- 步骤 B: 饱和度 ---
+    #     if abs(saturation_factor - 1.0) > 0.01:
+    #         img = img.astype(np.uint8)
+    #         hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
+    #         hsv_img[..., 1] *= saturation_factor
+    #         hsv_img[..., 1] = np.clip(hsv_img[..., 1], 0, 255)
+    #         hsv_img = hsv_img.astype(np.uint8)
+    #         img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
+    #     else:
+    #         img = img.astype(np.uint8)
 
-        mask = (img_ori == 0).all(axis=2)
-        img[mask] = 0
+    #     mask = (img_ori == 0).all(axis=2)
+    #     img[mask] = 0
 
-        # --- 步骤 C: 获取皱纹 mask 并混合（仿照 pimple）---
-        wrinkle_mask = self._apply_wrinkle(img, wrinkle_list, lms_i_new)  
+    #     # --- 步骤 C: 获取皱纹 mask 并混合（仿照 pimple）---
+    #     wrinkle_mask = self._apply_wrinkle(img, wrinkle_list, lms_i_new)  
         
-        cv2.imwrite("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/wrinklemask.png", (wrinkle_mask).astype(np.uint8))
+    #     cv2.imwrite("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/wrinklemask.png", (wrinkle_mask).astype(np.uint8))
         
-        # 混合：mask=0 的地方用处理后的 img（变暗的肤色），mask=1 的地方用原图
-        # mask = (wrinkle_mask > 0).astype(np.float32)
-        # SUM = np.sum(wrinkle_mask, axis=(0,1))
-        # NUM = np.sum(mask, axis=(0,1))
-        # average_wrinkle_mask = SUM / NUM
-        # # print(SUM, NUM, average_wrinkle_mask)
-        # img = img + (wrinkle_mask-1.5*average_wrinkle_mask) * mask
-        # img[img>255] = 255
-        # img[img<0] = 0
-        # img = img.astype(np.uint8)
+    #     # 混合：mask=0 的地方用处理后的 img（变暗的肤色），mask=1 的地方用原图
+    #     # mask = (wrinkle_mask > 0).astype(np.float32)
+    #     # SUM = np.sum(wrinkle_mask, axis=(0,1))
+    #     # NUM = np.sum(mask, axis=(0,1))
+    #     # average_wrinkle_mask = SUM / NUM
+    #     # # print(SUM, NUM, average_wrinkle_mask)
+    #     # img = img + (wrinkle_mask-1.5*average_wrinkle_mask) * mask
+    #     # img[img>255] = 255
+    #     # img[img<0] = 0
+    #     # img = img.astype(np.uint8)
 
-        img = (wrinkle_mask / 256.0 * img + (1 - wrinkle_mask/256.0) * img_ori)
-        return img
-    def get_center_crop_face(self, img, landmarks, landmarksi, scale=1.5):
+    #     img = (wrinkle_mask / 256.0 * img + (1 - wrinkle_mask/256.0) * img_ori)
+    #     return img
+    
+    
+    def get_center_crop_face(self, img, landmarks, landmarksi, scale=1.5, target_w=None, target_h=None):
         """
-        最简逻辑：计算人脸中心 -> 按比例外扩 -> 直接裁切(超出部分自动丢弃)
+        基于人脸中心和指定目标长宽比进行裁剪，超出边界则硬裁剪。
+        如果目标长宽比未指定，则直接返回自然扩大的 bounding box (等效面积训练用)。
         """
         new_landmarksi = landmarksi.copy()
         h_img, w_img = img.shape[:2]
@@ -584,13 +572,6 @@ class FaceGrid:
         min_x, min_y = np.min(valid_pts, axis=0)
         max_x, max_y = np.max(valid_pts, axis=0)
 
-        valid_ptsi = landmarksi[:, :2]
-
-        ori_x1, ori_y1 = np.min(valid_ptsi, axis=0)
-        ori_x2, ori_y2 = np.max(valid_ptsi, axis=0)
-
-        ori_y1 = ori_y1-(ori_y2-ori_y1)*0.25
-
         # 人脸中心
         cx = (min_x + max_x) / 2
         cy = (min_y + max_y) / 2
@@ -599,17 +580,20 @@ class FaceGrid:
         fw = max_x - min_x
         fh = max_y - min_y
         
-        # 2. 确定裁剪框大小 (基于 scale 放大，并强制符合原图长宽比)
-        base_size = max(fw, fh) * scale
-        
-        target_ar = w_img / h_img # 目标长宽比
-        
-        if target_ar >= 1: # 横屏或正方形
-            crop_h = base_size
-            crop_w = base_size * target_ar
-        else: # 竖屏
-            crop_w = base_size
-            crop_h = base_size / target_ar
+        if target_w is not None and target_h is not None:
+            # 兼容固定宽高：强行保持目标长宽比，但不用 padding（听从 mentor 建议）
+            base_size = max(fw, fh) * scale
+            target_ar = target_w / target_h
+            if target_ar >= 1:
+                crop_h = base_size
+                crop_w = base_size * target_ar
+            else:
+                crop_w = base_size
+                crop_h = base_size / target_ar
+        else:
+            # 等效面积：直接取人脸自然的 bounding box 扩大
+            crop_w = fw * scale
+            crop_h = fh * scale
             
         # 3. 计算坐标 (直接以 cx, cy 为中心)
         x1 = int(cx - crop_w / 2)
@@ -617,33 +601,29 @@ class FaceGrid:
         x2 = int(cx + crop_w / 2)
         y2 = int(cy + crop_h / 2)
         
-        # 4. 硬裁切 (Clip)
-        # 不做任何平移，直接把超出边界的坐标限制在 [0, w] 和 [0, h] 之间
-        # 这就是"人脸被切掉一点没关系"的体现
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(w_img, x2)
-        y2 = min(h_img, y2)
+        # 4. 硬裁切 (不使用 Padding 等奇技淫巧)
+        safe_x1 = max(0, x1)
+        safe_y1 = max(0, y1)
+        safe_x2 = min(w_img, x2)
+        safe_y2 = min(h_img, y2)
         
-        # mask = np.zeros(img.shape).astype('uint8')
-        # mask[int(ori_y1):int(ori_y2), int(ori_x1):int(ori_x2)] = 1
-        # img = img*mask
         # 5. 执行裁剪
-        crop = img[y1:y2, x1:x2]
+        crop = img[safe_y1:safe_y2, safe_x1:safe_x2]
         
-        new_landmarksi[:, 0] = landmarksi[:, 0] - x1
-        new_landmarksi[:, 1] = landmarksi[:, 1] - y1
-
         # 兜底
         if crop.size == 0:
             return img, new_landmarksi
-            
+        
+        new_landmarksi[:, 0] = landmarksi[:, 0] - safe_x1
+        new_landmarksi[:, 1] = landmarksi[:, 1] - safe_y1
+
         return crop, new_landmarksi
 
 
-    def compose_face_grid_frames_stable(self, source_frames, dwpose_np_face, dwpose_np_full, h, w, aug_intensity=1.9):
+    def compose_face_grid_frames_stable(self, source_frames, dwpose_np_face, dwpose_np_full, h, w, max_pixels=None, aug_intensity=1.9):
         """
         合成人脸九宫格视频 + 无闪烁(Stable)的可调节增强
+        支持固定长宽比 (传 h, w) 和等效面积 (传 max_pixels, 不传 h, w) 两种模式。
         """
         # 1. 数据切分为9份
         grid_sources = np.split(source_frames, 9)
@@ -651,15 +631,49 @@ class FaceGrid:
         grid_landmarks_full = np.split(dwpose_np_full, 9)
         
         target_length = grid_sources[0].shape[0]
-        original_h, original_w = source_frames.shape[1], source_frames.shape[2]
         
-        # 九宫格单格大小
-        cell_w = w // 3
-        cell_h = h // 3
-        
-        # 最终画布
-        final_h = h
-        final_w = w
+        # 决定九宫格的最终尺寸和单格尺寸
+        if h is not None and w is not None:
+            # 固定宽高模式
+            final_h = h
+            final_w = w
+            cell_w = w // 3
+            cell_h = h // 3
+            target_w_for_crop, target_h_for_crop = cell_w, cell_h
+        else:
+            # 等效面积模式
+            # 随机取一帧来估计人脸自然长宽比
+            lms_idx_est = random.randint(0, len(grid_landmarks[0])-1)
+            est_img = grid_sources[0][lms_idx_est]
+            est_lms = grid_landmarks[0][lms_idx_est]
+            est_lms_i = grid_landmarks[0][lms_idx_est]
+            face_crop, _ = self.get_center_crop_face(est_img, est_lms, est_lms_i, scale=1.2, target_w=None, target_h=None)
+            face_h, face_w = face_crop.shape[:2]
+            if face_h == 0 or face_w == 0:
+                face_ar = 1.0
+            else:
+                face_ar = face_w / face_h
+            
+            # 计算等效面积下的宽高
+            # 3*cell_w * 3*cell_h = max_pixels
+            # cell_w / cell_h = face_ar
+            area = max_pixels if max_pixels else 268800 # 默认等效面积为 480*560
+            grid_w = (area * face_ar) ** 0.5
+            grid_h = (area / face_ar) ** 0.5
+            
+            # 为了 VAE 和 九宫格划分，宽高需要是 48 (16 * 3) 的整数倍
+            final_w = int(round(grid_w / 48) * 48)
+            final_h = int(round(grid_h / 48) * 48)
+            
+            if final_w == 0: final_w = 48
+            if final_h == 0: final_h = 48
+            
+            cell_w = final_w // 3
+            cell_h = final_h // 3
+            
+            # 告诉 get_center_crop_face 不要强行矫正比例，用自然比例
+            target_w_for_crop, target_h_for_crop = None, None
+
         final_video_array = np.zeros((target_length, final_h, final_w, 3), dtype=np.uint8)
         
         # =========================================================
@@ -677,10 +691,6 @@ class FaceGrid:
             params = self.generate_aug_params(intensity=aug_intensity, pimple=True) #@zijie
             pimple_params_list.append(params)
             # 打印一下参数，方便调试查看每个格子的风格
-        wrinkle_params_list = []
-        for k in range(9):
-            params = self.generate_aug_params(intensity=aug_intensity, wrinkle=True) #@zijie
-            wrinkle_params_list.append(params)
         
         if random.uniform(0,1)< 0.25:
             cell_params_list = [params]*9
@@ -698,18 +708,19 @@ class FaceGrid:
                 lms_i_full = grid_landmarks_full[k][i]
                 
                 # --- 裁剪与缩放逻辑 (模拟) ---
-                face_crop, lms_i_new = self.get_center_crop_face(img, lms, lms_i, scale=scale) 
-                resized_face = cv2.resize(face_crop, (cell_w, cell_h), interpolation=cv2.INTER_AREA)
-                lms_i_new[:,1] = lms_i_new[:,1]*(cell_h/face_crop.shape[0])
+                # 如果是等效面积，target_* 为 None，使用人脸自然比例硬裁切。如果有拉伸那也是不同人脸本身的比例差异，mentor 要求不 padding
+                face_crop, lms_i_new = self.get_center_crop_face(img, lms, lms_i, scale=scale, target_w=target_w_for_crop, target_h=target_h_for_crop)
+                
+                if face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
+                    resized_face = np.zeros((cell_h, cell_w, 3), dtype=np.uint8)
+                else:
+                    resized_face = cv2.resize(face_crop, (cell_w, cell_h), interpolation=cv2.INTER_AREA)
+                    lms_i_new[:,1] = lms_i_new[:,1]*(cell_h/face_crop.shape[0])
                 lms_i_new[:,0] = lms_i_new[:,0]*(cell_w/face_crop.shape[1])
-                # --- 核心逻辑: 应用固定的参数 ---
                 # 每一帧 i，第 k 个格子都使用 cell_params_list[k]
                 # 因为参数不变，所以画面不会闪烁
-                # augmented_face = self.apply_stable_augmentation(resized_face, cell_params_list[k]) #@zijie
                 augmented_face = self.process_pimple(resized_face, pimple_params_list[k], lms_i_new=lms_i_new, frame_idx=i) #@jiwen: 加痣入口
-                # augmented_face = self.process_wrinkle(augmented_face, wrinkle_params_list[k], lms_i_new=lms_i_new, frame_idx=i)
                 augmented_face = self.apply_stable_augmentation(augmented_face, cell_params_list[k], lms_i_new=lms_i_new, frame_idx=i)
-                # augmented_face = self.apply_stable_augmentation(resized_face, cell_params_list[k], lms_i_new=lms_i_new, frame_idx=i)
                 cells.append(augmented_face)
                 
             # 拼接
@@ -887,10 +898,10 @@ class FaceGrid:
         return result_array[:,np.newaxis]
 
     # --- 主流程串联 ---
-    def execute(self, input_path, output_path, dwpose_path, fps, ori_fps, h, w, n, save=False):
+    def execute(self, input_path, output_path, dwpose_path, fps, ori_fps, h=None, w=None, max_pixels=None, n=1, save=False):
         # 1. 读
         raw_frames, fps, indices = self.read_video_frames(input_path, n)
-        ori_h, ori_w = raw_frames[0].shape[:2]   
+        ori_h, ori_w = raw_frames[0].shape[:2]
         dwpose_np = self.load_pose(dwpose_path, ori_h, ori_w, ori_fps, fps) #[n,1,134,3]
         indices[indices>dwpose_np.shape[0]-1] = dwpose_np.shape[0]-1
 
@@ -899,7 +910,7 @@ class FaceGrid:
         dwpose_np_full = dwpose_np[:,0][indices]  # 新增：完整134点
 
         # 2. 算
-        result_frames = self.compose_face_grid_frames_stable(raw_frames, dwpose_np_face, dwpose_np_full, h, w)
+        result_frames = self.compose_face_grid_frames_stable(raw_frames, dwpose_np_face, dwpose_np_full, h=h, w=w, max_pixels=max_pixels)
             
         if save: #random.uniform(0,1)<0.05:
             # 3. 写 (使用新的 imageio 逻辑)

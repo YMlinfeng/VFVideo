@@ -123,6 +123,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         task="sft",
         max_timestep_boundary=1.0,
         min_timestep_boundary=0.0,
+        enable_id_grid=False,
     ):
         super().__init__()
         if not use_gradient_checkpointing:
@@ -196,6 +197,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs_shared = {
             # 修改点：映射 video
             "input_video": data["video_path"], #fp32
+            "id_grid": data.get("id_grid"), # 九宫格ID注入
             # "height": data["video_path"][0].size[1],
             # "width": data["video_path"][0].size[0],
             "height": data["video_path"][0].shape[-2] if isinstance(data["video_path"][0], torch.Tensor) else data["video_path"][0].size[1],
@@ -243,6 +245,13 @@ def wan_parser():
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
     parser.add_argument("--debug", default=False, action="store_true", help="Whether to debug")
+    # ========== 九宫格ID注入相关参数 ==========
+    parser.add_argument("--enable_id_grid", default=False, action="store_true", help="Whether to enable ID grid injection for identity preservation.")
+    parser.add_argument("--id_grid_height", type=int, default=560, help="Height of the ID grid output.")
+    parser.add_argument("--id_grid_width", type=int, default=480, help="Width of the ID grid output.")
+    parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="Max pixels (equivalent area) for ID grid.")
+    parser.add_argument("--id_grid_aug_intensity", type=float, default=1.9, help="Data augmentation intensity for ID grid.")
+    parser.add_argument("--debug_save_dir", type=str, default="./debug_vis", help="Directory to save debug visualizations.")
     return parser
 
 
@@ -299,7 +308,15 @@ if __name__ == "__main__":
                 tgt_fps=args.tgt_fps, 
                 sr=16000
             ),
-        }
+        },
+        # ========== 九宫格ID注入配置 ==========
+        enable_id_grid=args.enable_id_grid,
+        id_grid_height=args.id_grid_height,
+        id_grid_width=args.id_grid_width,
+        id_grid_max_pixels=args.id_grid_max_pixels,
+        id_grid_aug_intensity=args.id_grid_aug_intensity,
+        debug=args.debug,
+        debug_save_dir=args.debug_save_dir,
     )
     accelerator.wait_for_everyone()  # <--- 加这句，确保大家都活过来了
     model = WanTrainingModule(
@@ -324,6 +341,7 @@ if __name__ == "__main__":
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
     )
+
     accelerator.wait_for_everyone()
     model.debug_parameters()
     model_logger = ModelLogger(

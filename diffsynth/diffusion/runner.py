@@ -493,7 +493,7 @@ def diagnose_default_training_status(model):
     print(f"   -------------------------------------------")
     print(f"   🔓 可训练层数 (Trainable): {len(trainable_params)}")
     print(f"      - 参数量: {trainable_numel / 1e9:.2f} B")
-    print(f"      - 占比: {trainable_numel / total_params * 100:.2f}%")
+    print(f"      - 占比: {trainable_numel / (total_params+1) * 100:.2f}%")
     print(f"   🔒 不可训练层数 (Frozen): {len(frozen_params)}")
     print(f"      - 参数量: {frozen_numel / 1e9:.2f} B")
     print(f"   -------------------------------------------")

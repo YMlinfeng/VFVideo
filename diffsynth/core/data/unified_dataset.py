@@ -26,6 +26,7 @@ import torch
 import numpy as np
 import soundfile as sf
 import imageio
+from diffsynth.core.data.operators import DataProcessingOperator, LoadIDGrid, DebugVisualizer, ImageCropAndResize
 
 def images2video_buffer(images_list, kwargs):
     """将多个图像序列保存为对比视频"""
@@ -101,6 +102,14 @@ class UnifiedDataset(torch.utils.data.Dataset):
         tgt_fps=15,
         main_data_operator=lambda x: x,
         special_operator_map=None,
+        # ========== 九宫格ID注入相关参数 ==========
+        enable_id_grid=False,  # 是否启用九宫格ID注入
+        id_grid_height=560,    # 九宫格输出高度
+        id_grid_width=480,     # 九宫格输出宽度
+        id_grid_max_pixels=268800, # 九宫格等效面积 (等效面积模式)
+        id_grid_aug_intensity=1.9,  # 数据增强强度
+        debug=False,           # 是否启用调试可视化
+        debug_save_dir="./debug_vis",  # 调试输出目录
     ):
         self.ori_fps = 30
         self.video_start_idx = 0
@@ -119,6 +128,25 @@ class UnifiedDataset(torch.utils.data.Dataset):
         self.cached_data = []
         self.load_from_cache = metadata_path is None
         self.load_metadata(metadata_path)
+        # ========== 九宫格ID注入初始化 ==========
+        self.enable_id_grid = enable_id_grid
+        self.id_grid_height = id_grid_height
+        self.id_grid_width = id_grid_width
+        self.id_grid_max_pixels = id_grid_max_pixels
+        self.id_grid_loader = None
+        if enable_id_grid:
+            self.id_grid_loader = LoadIDGrid(
+                num_frames=num_frames,
+                tgt_fps=tgt_fps,
+                height=id_grid_height,
+                width=id_grid_width,
+                max_pixels=id_grid_max_pixels,
+                aug_intensity=id_grid_aug_intensity,
+            )
+        
+        # ========== 调试可视化初始化 ==========
+        self.debug = debug
+        self.debug_visualizer = DebugVisualizer(enabled=debug, save_dir=debug_save_dir)
     
     # @staticmethod
     # def default_image_operator(
@@ -174,16 +202,16 @@ class UnifiedDataset(torch.utils.data.Dataset):
             print("No metadata_path. Searching for cached data files.")
             self.search_for_cached_data_files(self.base_path)
             print(f"{len(self.cached_data)} cached data files found.")
-        # elif metadata_path.endswith(".json"):
-        #     with open(metadata_path, "r") as f:
-        #         metadata = json.load(f)
-        #     self.data = metadata
-        # elif metadata_path.endswith(".jsonl"):
-        #     metadata = []
-        #     with open(metadata_path, 'r') as f:
-        #         for line in f:
-        #             metadata.append(json.loads(line.strip()))
-        #     self.data = metadata
+        elif metadata_path.endswith(".json"):
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+            self.data = metadata
+        elif metadata_path.endswith(".jsonl"):
+            metadata = []
+            with open(metadata_path, 'r') as f:
+                for line in f:
+                    metadata.append(json.loads(line.strip()))
+            self.data = metadata
         else:
             metadata = pandas.read_csv(metadata_path)
             ##
@@ -199,7 +227,33 @@ class UnifiedDataset(torch.utils.data.Dataset):
             # data (仓库):就是当前这一行 CSV 数据：{'video': 'A.mp4', 's2v_pose_video': 'B.mp4', 'input_audio': 'C.mp3', 'prompt': '...'}
             # self.data_file_keys (购物清单)，告诉程序"我这次训练只需要处理这几列文件：['video', 'input_audio', 's2v_pose_video']
             data = self.data[data_id % len(self.data)].copy() # {'video': 'wans2v/s2v_video.mp4', 's2v_pose_video': 'wans2v/pose.mp4', 'input_audio': 'wans2v/sing.MP3', 'prompt': 'a person is singing'}
-            
+            # ================== 九宫格ID注入模块 ==================
+            # 如果启用了九宫格ID注入，则加载九宫格参考视频
+            if self.enable_id_grid and self.id_grid_loader is not None:
+                # 调用 LoadIDGrid 生成九宫格ID参考
+                id_grid_tensor = self.id_grid_loader(data)
+                # 将九宫格数据存入 data 字典
+                # id_grid_tensor 形状: (C, T, H, W)，值域 [-1, 1]
+                data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])
+                
+                # Debug 可视化
+                if self.debug:
+                    self.debug_visualizer.save_video(
+                        id_grid_tensor, 
+                        "id_grid", 
+                        data_id=data_id, 
+                        fps=20
+                    )
+                    # 如果有视频首帧，保存对比图
+                    if "video_path" in data and torch.is_tensor(data["video_path"]):
+                        first_frame = data["video_path"][:, 0]  # (C, H, W)
+                        self.debug_visualizer.save_grid_comparison(
+                            id_grid_tensor,
+                            first_frame,
+                            "comparison",
+                            data_id=data_id
+                        )
+            # ===================================================
             # 用于暂存 Debug 数据
             # debug_raw_video = None
             # debug_raw_audio = None
@@ -272,6 +326,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
             #     except Exception as e:
             #         print(f"[Debug Error] Failed to write video: {e}")
             # # ===================================================
+            
             return data
 
 

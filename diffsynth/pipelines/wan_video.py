@@ -224,6 +224,7 @@ class WanVideoPipeline(BasePipeline):
             WanVideoUnit_ImageEmbedderVAE(),
             WanVideoUnit_ImageEmbedderCLIP(),
             WanVideoUnit_ImageEmbedderFused(),
+            WanVideoUnit_IDGridEmbedder(),  # 九宫格ID注入
             # WanVideoUnit_FunControl(), 
             # WanVideoUnit_FunReference(), 
             # WanVideoUnit_FunCameraControl(), 
@@ -290,6 +291,7 @@ class WanVideoPipeline(BasePipeline):
         
         # Initialize pipeline
         pipe = WanVideoPipeline(device=device, torch_dtype=torch_dtype)
+        # return pipe
         if use_usp:
             from ..utils.xfuser import initialize_usp
             initialize_usp(device)
@@ -487,6 +489,41 @@ class WanVideoPipeline(BasePipeline):
         # [img.save(f"/m2v_intern/mengzijie/DiffSynth-Studio/output/output_20260127_144600/frame_{i:03d}.png") for i, img in enumerate(video)]
         self.load_models_to_device([])
         return video
+
+
+class WanVideoUnit_IDGridEmbedder(PipelineUnit):
+    """
+    九宫格ID注入 Embedder。
+    """
+    def __init__(self):
+        super().__init__(
+            input_params=("id_grid", "tiled", "tile_size", "tile_stride"),
+            output_params=("id_grid_latents",),
+            onload_model_names=("vae",)
+        )
+
+    def process(self, pipe: WanVideoPipeline, id_grid, tiled, tile_size, tile_stride):
+        if id_grid is None:
+            return {}
+        
+        if not torch.is_tensor(id_grid):
+            # 兼容性处理
+            return {}
+            
+        pipe.load_models_to_device(self.onload_model_names)
+        
+        # 确保在正确的 device
+        id_grid = id_grid.to(pipe.device)
+        
+        # 修复 IndexError: 处理 DataLoader 未能正确添加 batch 维度的情况 (比如单卡单样本训练且没走 collate)
+        if id_grid.ndim == 4:
+            id_grid = id_grid.unsqueeze(0)  # (C, T, H, W) -> (1, C, T, H, W)
+            
+        # VAE Encode
+        id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
+        
+        return {"id_grid_latents": id_grid_latents}
+
 
 
 
@@ -1217,7 +1254,40 @@ class TemporalTiler_BCTHW:
         model_kwargs.update(tensor_dict)
         return value
 
+def get_1d_freqs(positions, dim, theta=10000.0, device=None):
+    # RoPE 1D helper
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].double().to(device) / dim))
+    freqs = torch.outer(positions.to(device).float(), freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    return freqs_cis
 
+def make_grid_freqs(f, h, w, time_offset, head_dim, device):
+    # dim split: [d - 2*(d//3), d//3, d//3]
+    d_f = head_dim - 2 * (head_dim // 3)
+    d_h = head_dim // 3
+    d_w = head_dim // 3
+    
+    # Time positions (negative for ID grid)
+    pos_f = torch.arange(time_offset, time_offset + f, device=device)
+    freqs_f = get_1d_freqs(pos_f, d_f, device=device)
+    
+    # Space positions
+    pos_h = torch.arange(0, h, device=device)
+    freqs_h = get_1d_freqs(pos_h, d_h, device=device)
+    
+    pos_w = torch.arange(0, w, device=device)
+    freqs_w = get_1d_freqs(pos_w, d_w, device=device)
+    
+    # Broadcasting to (f, h, w)
+    # freqs_f: (f, D_f) -> (f, 1, 1, D_f) -> (f, h, w, D_f)
+    freqs_f = freqs_f.view(f, 1, 1, -1).expand(f, h, w, -1)
+    freqs_h = freqs_h.view(1, h, 1, -1).expand(f, h, w, -1)
+    freqs_w = freqs_w.view(1, 1, w, -1).expand(f, h, w, -1)
+    
+    # Concat
+    freqs = torch.cat([freqs_f, freqs_h, freqs_w], dim=-1) # (f, h, w, head_dim) (complex)
+    freqs = freqs.reshape(f * h * w, 1, -1)
+    return freqs
 
 def model_fn_wan_video(
     dit: WanModel,
@@ -1253,6 +1323,7 @@ def model_fn_wan_video(
     use_gradient_checkpointing_offload: bool = False,
     control_camera_latents_input = None,
     fuse_vae_embedding_in_latents: bool = False,
+    id_grid_latents: Optional[torch.Tensor] = None,
     **kwargs,
 ):
     if sliding_window_size is not None and sliding_window_stride is not None:
@@ -1362,6 +1433,52 @@ def model_fn_wan_video(
         dit.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
         dit.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
     ], dim=-1).reshape(f * h * w, 1, -1).to(x.device)
+
+    # ========== 九宫格ID注入处理 ==========
+    if id_grid_latents is not None:
+        # id_grid_latents: (B, 16, T_g, H_g, W_g)
+        b, c, t_g, h_g, w_g = id_grid_latents.shape
+        
+        # 1. 构造 Patch Embedding 输入
+        # 目标是匹配 dit.in_dim (对于 I2V 是 33: 16 latents + 1 mask + 16 y)
+        # 我们将 id_grid 放在 "y" 的位置（条件），将 "x" 的位置（噪声）置零
+        # 结构: [zeros_x(16) | mask(1) | id_grid(16)]
+        
+        zeros_x = torch.zeros(b, 16, t_g, h_g, w_g, device=x.device, dtype=x.dtype)
+        mask_grid = torch.ones(b, 1, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
+        
+        # 确保 id_grid_latents 类型正确
+        id_grid_latents = id_grid_latents.to(dtype=x.dtype)
+        
+        # 拼接
+        grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 33, T_g, H_g, W_g)
+        
+        # 2. Patchify Grid
+        # 使用 dit 的 patch_embedding 层
+        grid_tokens = dit.patch_embedding(grid_input)
+        
+        # Flatten
+        grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c')
+        
+        # 3. 计算 Grid Freqs (RoPE)
+        # 获取 patch 后的维度
+        pf, ph, pw = dit.patch_size
+        f_token = t_g // pf
+        h_token = h_g // ph
+        w_token = w_g // pw
+        
+        # 构造负时间索引，使 Grid 位于主视频之前
+        # 主视频从 0 开始。Grid 从 -f_token 开始到 -1
+        # 这样 Grid 的位置编码就 "足够近" (0 vs -1, -2...)
+        time_offset = -f_token
+        
+        grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, dit.dim // dit.num_heads, x.device)
+        
+        # 4. 拼接到 x 和 freqs
+        # Grid 在时间上在前面，所以拼在前面
+        x = torch.cat([grid_tokens, x], dim=1)
+        freqs = torch.cat([grid_freqs, freqs], dim=0)
+    # ===================================
 
     # VAP 
     if vap is not None:

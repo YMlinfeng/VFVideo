@@ -100,52 +100,6 @@ class LoadImage(DataProcessingOperator):
         return image
 
 
-# class ImageCropAndResize(DataProcessingOperator):
-#     '''
-#     height 和 width 指定	直接缩放到指定尺寸
-#     只指定 max_pixels	按比例缩放，保证总像素数不超过限制
-#     '''
-#     def __init__(self, height=None, width=None, max_pixels=None, height_division_factor=1, width_division_factor=1):
-#         self.height = height
-#         self.width = width
-#         self.max_pixels = max_pixels
-#         self.height_division_factor = height_division_factor
-#         self.width_division_factor = width_division_factor
-
-#     def crop_and_resize(self, image, target_height, target_width):
-#         '''
-#         crop_and_resize 逻辑: 原图 1920x1080 → 目标 512x512
-#             1. 计算缩放比例: scale = max(512/1920, 512/1080) = 0.474
-#             2. 缩放: 910x512
-#             3. 中心裁剪: 512x512
-#         '''
-#         width, height = image.size
-#         scale = max(target_width / width, target_height / height)
-#         image = torchvision.transforms.functional.resize(
-#             image,
-#             (round(height*scale), round(width*scale)),
-#             interpolation=torchvision.transforms.InterpolationMode.BILINEAR
-#         )
-#         image = torchvision.transforms.functional.center_crop(image, (target_height, target_width))
-#         return image
-    
-#     def get_height_width(self, image):
-#         if self.height is None or self.width is None:
-#             width, height = image.size
-#             if width * height > self.max_pixels:
-#                 scale = (width * height / self.max_pixels) ** 0.5
-#                 height, width = int(height / scale), int(width / scale)
-#             height = height // self.height_division_factor * self.height_division_factor
-#             width = width // self.width_division_factor * self.width_division_factor
-#         else:
-#             height, width = self.height, self.width
-#         return height, width
-    
-#     def __call__(self, data: Image.Image):
-#         image = self.crop_and_resize(data, *self.get_height_width(data))
-#         return image
-
-
 class ImageCropAndResize(DataProcessingOperator):
     '''
     集成功能：
@@ -732,4 +686,329 @@ class LoadPose(DataProcessingOperator):
         print(f"Resampled & Sliced shape: {dwpose_np.shape} (fps: {tgt_fps}, slice: {clip_start_idx}:{clip_start_idx+len(dwpose_np)})")
 
         return dwpose_np
+
+
+class LoadIDGrid(DataProcessingOperator):
+    """
+    加载视频并生成九宫格ID参考图。
+    
+    该操作符调用 FaceGrid 类将视频处理成九宫格形式的ID参考，
+    用于在I2V训练中注入身份信息。
+    
+    九宫格布局：
+    ┌───┬───┬───┐
+    │ 1 │ 2 │ 3 │  不同角度/表情的人脸
+    ├───┼───┼───┤
+    │ 4 │ 5 │ 6 │  裁剪并增强后的人脸
+    ├───┼───┼───┤
+    │ 7 │ 8 │ 9 │
+    └───┴───┴───┘
+    
+    输入: 包含 video_path, dwpose_path, fps, ori_fps 等信息的字典
+    输出: 九宫格ID参考视频 tensor (C, T, H, W)
+    
+    关键设计说明：
+    - 九宫格的帧数与主视频帧数保持一致，便于后续 token concat
+    - 输出值域为 [-1, 1]，与主视频一致
+    - 九宫格的尺寸可以与主视频不同（会在 VAE 编码后统一处理）
+    """
+    def __init__(self, num_frames=41, tgt_fps=15.0, height=None, width=None, max_pixels=268800, aug_intensity=1.9):
+        """
+        Args:
+            num_frames: 目标帧数，应与主视频帧数一致
+            tgt_fps: 目标帧率
+            height: 九宫格输出高度（可以与主视频不同）
+            width: 九宫格输出宽度（可以与主视频不同）
+            max_pixels: 九宫格输出等效面积（等效面积模式用）
+            aug_intensity: 数据增强强度（控制亮度、对比度、饱和度等变化）
+        """
+        self.num_frames = num_frames
+        self.tgt_fps = tgt_fps
+        self.height = height
+        self.width = width
+        self.max_pixels = max_pixels
+        self.aug_intensity = aug_intensity
+        self.needs_full_data = True  # 需要访问完整的 data 字典
         
+        # 延迟导入 FaceGrid，避免循环依赖
+        self._face_grid = None
+    
+    @property
+    def face_grid(self):
+        """延迟初始化 FaceGrid"""
+        if self._face_grid is None:
+            from diffsynth.core.data.video_downsample import FaceGrid
+            self._face_grid = FaceGrid()
+        return self._face_grid
+    
+    def _get_video_path(self, data: dict) -> str:
+        """从 data 字典中获取视频路径，支持多种字段名"""
+        # 优先使用原始视频路径字段
+        for key in ["video_path"]:
+            path = data.get(key)
+            if path is not None and path != "None" and str(path) != "nan":
+                # 如果是 tensor，说明已经被处理过了，需要找原始路径
+                if isinstance(path, torch.Tensor):
+                    continue
+                return str(path)
+        return None
+    
+    def _find_pose_path(self, video_path: str, data: dict) -> str:
+        """查找姿态文件路径"""
+        # 首先检查 data 中是否有 dwpose_path
+        dwpose_path = data.get("dwpose_path")
+        if dwpose_path is not None and dwpose_path != "None" and str(dwpose_path) != "nan":
+            if os.path.exists(str(dwpose_path)):
+                return str(dwpose_path)
+        
+        # 如果没有，尝试从 video_path 推断
+        if video_path is None:
+            return None
+            
+        video_dir = os.path.dirname(video_path)
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        
+        # 尝试几种常见的 pose 文件路径模式
+        possible_paths = [
+            os.path.join(video_dir, f"{video_name}_dwpose.npy"),
+            os.path.join(video_dir, f"{video_name}_Pose2d_dwpose.npy"),
+            os.path.join(video_dir, "pose", f"{video_name}.npy"),
+            os.path.join(video_dir, f"{video_name}.json"),
+            # 常见的 pose 目录结构
+            video_path.replace(".mp4", "_Pose2d_dwpose.npy"),
+            video_path.replace(".mp4", ".json"),
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
+    def __call__(self, data: dict):
+        """
+        处理视频生成九宫格ID参考。
+        
+        Args:
+            data: 包含以下字段的字典:
+                - video_path: 视频文件路径（或其他视频路径字段）
+                - dwpose_path: 姿态文件路径 (可选)
+                - fps: 视频帧率
+                - ori_fps: 原始帧率 (可选，默认等于fps)
+                - video_start_idx: 视频起始帧索引 (可选)
+                - actual_n: 实际帧数 (可选)
+        
+        Returns:
+            torch.Tensor: 九宫格ID参考视频，形状 (C, T, H, W)，值域 [-1, 1]
+        """
+        # 获取视频路径
+        video_path = self._get_video_path(data)
+        if video_path is None:
+            print(f"[LoadIDGrid] Warning: No video path found in data")
+        
+        # 获取帧率信息
+        fps = float(data.get("fps", self.tgt_fps))
+        ori_fps = float(data.get("ori_fps", fps))
+        
+        # 处理 ori_fps 为 nan 的情况
+        if str(ori_fps) == "nan" or ori_fps <= 0:
+            ori_fps = fps
+        
+        # 查找姿态文件
+        dwpose_path = self._find_pose_path(video_path, data)
+        
+        # 如果没有 pose 文件，返回零 tensor
+        if dwpose_path is None:
+            print(f"[LoadIDGrid] Warning: No pose file found for {video_path}")
+        
+        # 计算 n 值 (FaceGrid 使用 8*n+1 的帧数)
+        # 确保与主视频帧数一致
+        n = (self.num_frames - 1) // 8
+        if n < 1:
+            n = 1
+        
+        # 如果从 data 中可以获取动态算好的实际宽高，可以借用，或者纯依赖 max_pixels
+        max_pixels_to_use = self.max_pixels
+
+        # 调用 FaceGrid.execute 生成九宫格
+        # execute 返回 numpy array，形状 (T, H, W, 3)，值域 [0, 255]
+        id_grid_frames = self.face_grid.execute(
+            input_path=video_path,
+            output_path="./debug_vis/debug.mp4",  
+            dwpose_path=dwpose_path,
+            fps=fps,
+            ori_fps=ori_fps,
+            h=self.height,
+            w=self.width,
+            max_pixels=max_pixels_to_use,
+            n=n,
+            save=False
+        )
+        
+        # 转换为 tensor: (T, H, W, 3) -> (3, T, H, W)
+        # 值域转换: [0, 255] -> [-1, 1]
+        id_grid_tensor = torch.from_numpy(id_grid_frames.copy()).float()
+        id_grid_tensor = id_grid_tensor.permute(3, 0, 1, 2)  # (C, T, H, W)
+        id_grid_tensor = id_grid_tensor / 127.5 - 1.0  # 归一化到 [-1, 1]
+        
+        return id_grid_tensor
+
+
+class DebugVisualizer:
+    """
+    调试可视化工具类，用于保存中间结果。
+    
+    使用方法:
+        visualizer = DebugVisualizer(enabled=args.debug, save_dir="./debug_output")
+        visualizer.save_video(video_tensor, "id_grid", data_id=0)
+        visualizer.save_image(image_tensor, "first_frame", data_id=0)
+    """
+    def __init__(self, enabled=False, save_dir="./debug_vis"):
+        self.enabled = enabled
+        self.save_dir = save_dir
+        if enabled:
+            os.makedirs(save_dir, exist_ok=True)
+    
+    def save_video(self, tensor, name, data_id=0, fps=8):
+        """
+        保存视频 tensor 为 mp4 文件。
+        
+        Args:
+            tensor: (C, T, H, W) 或 (T, H, W, C) 格式的 tensor，值域 [-1, 1] 或 [0, 255]
+            name: 文件名前缀
+            data_id: 数据ID，用于区分不同样本
+            fps: 帧率
+        """
+        if not self.enabled:
+            return
+        
+        try:
+            import imageio
+            
+            # 确保是 numpy array
+            if torch.is_tensor(tensor):
+                tensor = tensor.detach().cpu()
+            
+            # 处理维度
+            if tensor.ndim == 4:
+                if tensor.shape[0] == 3:  # (C, T, H, W)
+                    tensor = tensor.permute(1, 2, 3, 0)  # -> (T, H, W, C)
+                # else: 已经是 (T, H, W, C)
+            
+            tensor = tensor.numpy() if torch.is_tensor(tensor) else tensor
+            
+            # 处理值域
+            if tensor.min() < 0:  # [-1, 1] -> [0, 255]
+                tensor = (tensor + 1.0) / 2.0 * 255.0
+            elif tensor.max() <= 1.0:  # [0, 1] -> [0, 255]
+                tensor = tensor * 255.0
+            
+            tensor = np.clip(tensor, 0, 255).astype(np.uint8)
+            tensor = np.ascontiguousarray(tensor)
+            
+            # 保存
+            save_path = os.path.join(self.save_dir, f"{name}_{data_id:04d}.mp4")
+            imageio.mimsave(save_path, tensor, fps=fps, codec='libx264', macro_block_size=1)
+            print(f"[DebugVis] Saved video: {save_path}")
+            
+        except Exception as e:
+            print(f"[DebugVis] Failed to save video {name}: {e}")
+    
+    def save_image(self, tensor, name, data_id=0):
+        """
+        保存图像 tensor 为 jpg 文件。
+        
+        Args:
+            tensor: (C, H, W) 或 (H, W, C) 格式的 tensor
+            name: 文件名前缀
+            data_id: 数据ID
+        """
+        if not self.enabled:
+            return
+        
+        try:
+            from PIL import Image
+            
+            if torch.is_tensor(tensor):
+                tensor = tensor.detach().cpu()
+            
+            # 处理维度
+            if tensor.ndim == 3:
+                if tensor.shape[0] == 3:  # (C, H, W)
+                    tensor = tensor.permute(1, 2, 0)  # -> (H, W, C)
+            
+            tensor = tensor.numpy() if torch.is_tensor(tensor) else tensor
+            
+            # 处理值域
+            if tensor.min() < 0:
+                tensor = (tensor + 1.0) / 2.0 * 255.0
+            elif tensor.max() <= 1.0:
+                tensor = tensor * 255.0
+            
+            tensor = np.clip(tensor, 0, 255).astype(np.uint8)
+            
+            # 保存
+            save_path = os.path.join(self.save_dir, f"{name}_{data_id:04d}.jpg")
+            Image.fromarray(tensor).save(save_path)
+            print(f"[DebugVis] Saved image: {save_path}")
+            
+        except Exception as e:
+            print(f"[DebugVis] Failed to save image {name}: {e}")
+    
+    def save_grid_comparison(self, id_grid, first_frame, name, data_id=0):
+        """
+        保存九宫格和首帧的对比图。
+        
+        Args:
+            id_grid: 九宫格 tensor (C, T, H, W)
+            first_frame: 首帧 tensor (C, H, W)
+            name: 文件名前缀
+            data_id: 数据ID
+        """
+        if not self.enabled:
+            return
+        
+        try:
+            from PIL import Image
+            import matplotlib.pyplot as plt
+            
+            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+            
+            # 处理九宫格 (取第一帧)
+            if torch.is_tensor(id_grid):
+                id_grid = id_grid.detach().cpu()
+            if id_grid.ndim == 4 and id_grid.shape[0] == 3:
+                id_grid_frame = id_grid[:, 0].permute(1, 2, 0).numpy()
+            else:
+                id_grid_frame = id_grid[0].numpy() if id_grid.ndim == 4 else id_grid.numpy()
+            
+            if id_grid_frame.min() < 0:
+                id_grid_frame = (id_grid_frame + 1.0) / 2.0
+            
+            axes[0].imshow(np.clip(id_grid_frame, 0, 1))
+            axes[0].set_title("ID Grid (Frame 0)")
+            axes[0].axis('off')
+            
+            # 处理首帧
+            if torch.is_tensor(first_frame):
+                first_frame = first_frame.detach().cpu()
+            if first_frame.ndim == 3 and first_frame.shape[0] == 3:
+                first_frame = first_frame.permute(1, 2, 0).numpy()
+            else:
+                first_frame = first_frame.numpy()
+            
+            if first_frame.min() < 0:
+                first_frame = (first_frame + 1.0) / 2.0
+            
+            axes[1].imshow(np.clip(first_frame, 0, 1))
+            axes[1].set_title("First Frame (I2V Input)")
+            axes[1].axis('off')
+            
+            plt.tight_layout()
+            save_path = os.path.join(self.save_dir, f"{name}_{data_id:04d}.jpg")
+            plt.savefig(save_path, dpi=150)
+            plt.close()
+            print(f"[DebugVis] Saved comparison: {save_path}")
+            
+        except Exception as e:
+            print(f"[DebugVis] Failed to save comparison {name}: {e}")
