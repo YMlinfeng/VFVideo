@@ -1,0 +1,291 @@
+import operator
+from .operators import *
+import torch, json, pandas
+import numpy as np
+from decord import VideoReader
+import ffmpeg
+import subprocess
+import imageio
+import io
+import os
+import cv2
+import json
+import torch,torchaudio
+from moviepy.editor import VideoFileClip, AudioFileClip
+import pandas as pd
+import soundfile as sf
+import random
+import torch
+import numpy as np
+import torchaudio
+from moviepy.editor import VideoFileClip 
+from diffsynth.core.data.operators import DataProcessingOperator
+import os
+import io
+import torch
+import numpy as np
+import soundfile as sf
+import imageio
+
+def images2video_buffer(images_list, kwargs):
+    """将多个图像序列保存为对比视频"""
+    fps = kwargs.get("fps", 30)
+    format = kwargs.get("format", "mp4")
+    codec = kwargs.get("codec", "libx264")
+    ffmpeg_params = ["-crf", str(kwargs.get("crf", 12))] #crf越低画质越高
+    pixelformat = kwargs.get("pixelformat", "yuv420p")
+    
+    video_stream = io.BytesIO()
+    min_length = min(len(images) for images in images_list)
+    
+    with imageio.get_writer(video_stream, fps=fps, format=format, 
+                          codec=codec, ffmpeg_params=ffmpeg_params, 
+                          pixelformat=pixelformat) as writer:
+        for idx in range(min_length):
+            frame = np.concatenate([images[idx] for images in images_list], axis=1)
+            writer.append_data(frame)
+    return video_stream.getvalue()
+
+def write_video_with_audio(video_res, audio_data, tgt_fps, save_path):
+    """
+    video_res: numpy array [T, H, W, C]
+    audio_data: numpy array [N] or [1, N] or Tensor
+    """
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    temp_video_path = save_path.replace(".mp4", "_temp_silent.mp4")
+    temp_audio_path = save_path.replace(".mp4", "_temp_audio.wav")
+
+    # 1. 保存纯画面视频
+    # 注意：video_res 是 uint8 格式
+    video_data = images2video_buffer([video_res], {"fps": tgt_fps})
+    with open(temp_video_path, "wb") as f:
+        f.write(video_data)
+
+    # 2. 保存音频 wav
+    # 统一处理音频格式转为 numpy 1D
+    if torch.is_tensor(audio_data):
+        audio_data = audio_data.detach().cpu().numpy()
+    if audio_data.ndim > 1:
+        audio_data = audio_data.flatten() # [1, N] -> [N]
+        
+    if audio_data is not None and len(audio_data) > 0:
+        sf.write(temp_audio_path, audio_data, 16000, 'PCM_24')
+    else:
+        print(f"Warning: No audio data for {save_path}")
+        os.rename(temp_video_path, save_path)
+        return
+
+    # 3. 合并音画
+    # -y: 覆盖
+    # -shortest: 以最短的流为准（防止音频比视频长一点点导致黑屏）
+    cmd = (
+        f'ffmpeg -y -loglevel quiet '
+        f'-i "{temp_video_path}" -i "{temp_audio_path}" '
+        f'-c:v copy -c:a aac '
+        f'"{save_path}"'
+    )
+    os.system(cmd)
+
+    # 清理临时文件
+    if os.path.exists(temp_video_path): os.remove(temp_video_path)
+    # if os.path.exists(temp_audio_path): os.remove(temp_audio_path)
+    print(f"[Debug] Saved check video: {save_path}")
+
+class UnifiedDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        base_path=None, metadata_path=None,
+        repeat=1,
+        data_file_keys=tuple(),
+        num_frames=57,
+        tgt_fps=15,
+        main_data_operator=lambda x: x,
+        special_operator_map=None,
+    ):
+        self.ori_fps = 30
+        self.video_start_idx = 0
+        self.video_end_idx = 0
+        self.sample_rate=16000
+        self.base_path = base_path
+        self.metadata_path = metadata_path
+        self.repeat = repeat
+        self.data_file_keys = data_file_keys
+        self.num_frames = num_frames
+        self.tgt_fps = tgt_fps
+        self.main_data_operator = main_data_operator
+        self.cached_data_operator = LoadTorchPickle()
+        self.special_operator_map = {} if special_operator_map is None else special_operator_map
+        self.data = []
+        self.cached_data = []
+        self.load_from_cache = metadata_path is None
+        self.load_metadata(metadata_path)
+    
+    # @staticmethod
+    # def default_image_operator(
+    #     base_path="",
+    #     max_pixels=1920*1080, height=None, width=None,
+    #     height_division_factor=16, width_division_factor=16,
+    # ):
+    #     return RouteByType(operator_map=[
+    #         (str, ToAbsolutePath(base_path) >> LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor)),
+    #         (list, SequencialProcess(ToAbsolutePath(base_path) >> LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor))),
+    #     ])
+    
+    @staticmethod
+    def default_video_operator(
+        base_path="",
+        max_pixels=1920*1080, height=None, width=None,
+        height_division_factor=16, width_division_factor=16,
+        num_frames=81, time_division_factor=4, time_division_remainder=1,
+    ):
+        # return RouteByType(operator_map=[
+        #     (str, ToAbsolutePath(base_path) >> RouteByExtensionName(operator_map=[
+        #         (("jpg", "jpeg", "png", "webp"), LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor) >> ToList()),
+        #         # (("gif",), LoadGIF(
+        #         #     num_frames, time_division_factor, time_division_remainder,
+        #         #     frame_processor=ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor),
+        #         # )),
+        #         (("mp4", "avi", "mov", "wmv", "mkv", "flv", "webm"), LoadVideo(
+        #             num_frames, time_division_factor, time_division_remainder,
+        #             frame_processor=ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor),
+        #         )),
+        #     ])),
+        # ])
+        return RouteByType(operator_map=[
+            (str, RouteByExtensionName(operator_map=[
+                # (("jpg", "jpeg", "png", "webp"), LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor) >> ToList()),
+                (("mp4", "avi", "mov", "wmv", "mkv", "flv", "webm"), LoadVideo(
+                    num_frames, time_division_factor, time_division_remainder,
+                    frame_processor=ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor),
+                )),
+            ])),
+        ])
+        
+    def search_for_cached_data_files(self, path):
+        for file_name in os.listdir(path):
+            subpath = os.path.join(path, file_name)
+            if os.path.isdir(subpath):
+                self.search_for_cached_data_files(subpath)
+            elif subpath.endswith(".pth"):
+                self.cached_data.append(subpath)
+    
+    def load_metadata(self, metadata_path):
+        if metadata_path is None:
+            print("No metadata_path. Searching for cached data files.")
+            self.search_for_cached_data_files(self.base_path)
+            print(f"{len(self.cached_data)} cached data files found.")
+        # elif metadata_path.endswith(".json"):
+        #     with open(metadata_path, "r") as f:
+        #         metadata = json.load(f)
+        #     self.data = metadata
+        # elif metadata_path.endswith(".jsonl"):
+        #     metadata = []
+        #     with open(metadata_path, 'r') as f:
+        #         for line in f:
+        #             metadata.append(json.loads(line.strip()))
+        #     self.data = metadata
+        else:
+            metadata = pandas.read_csv(metadata_path)
+            ##
+            metadata = metadata[metadata['video_length'] >= self.num_frames]
+            ##
+            self.data = [metadata.iloc[i].to_dict() for i in range(len(metadata))]
+
+    def __getitem__(self, data_id):
+        # if self.load_from_cache:
+        #     data = self.cached_data[data_id % len(self.cached_data)]
+        #     data = self.cached_data_operator(data)
+        # else:
+            # data (仓库):就是当前这一行 CSV 数据：{'video': 'A.mp4', 's2v_pose_video': 'B.mp4', 'input_audio': 'C.mp3', 'prompt': '...'}
+            # self.data_file_keys (购物清单)，告诉程序"我这次训练只需要处理这几列文件：['video', 'input_audio', 's2v_pose_video']
+            data = self.data[data_id % len(self.data)].copy() # {'video': 'wans2v/s2v_video.mp4', 's2v_pose_video': 'wans2v/pose.mp4', 'input_audio': 'wans2v/sing.MP3', 'prompt': 'a person is singing'}
+            
+            # 用于暂存 Debug 数据
+            # debug_raw_video = None
+            # debug_raw_audio = None
+
+            for key in self.data_file_keys:
+                # if key in data:
+                # 只有audio需要特殊处理
+                if key in self.special_operator_map: # {'animate_face_video': <diffsynth.core.data.operators.DataProcessingPipeline object at 0x7faa2d200f50>, 'input_audio': <diffsynth.core.data.operators.DataProcessingPipeline object at 0x7faa2d200fb0>}
+                    operator = self.special_operator_map[key]
+                elif key in self.data_file_keys: # ['video', 'input_audio', 's2v_pose_video']
+                    operator = self.main_data_operator # diffsynth.core.data.operators.RouteByType
+                else:
+                    continue
+                # 1. 判断是否需要传入全量 data (针对 LoadAudio)
+                if hasattr(operator, "needs_full_data") and operator.needs_full_data:
+                    # 传整个字典进去
+                    # LoadAudio 走这里
+                    processed_val = operator(data)
+                    # 确保音频数据不会在训练过程中被in-place修改111
+                    # if torch.is_tensor(processed_val):
+                    #     processed_val = processed_val.clone().detach()
+                    data[key] = processed_val
+                    
+                    # 捕获音频数据用于 Debug (假设 key 是 audio_path)
+                    # if "audio" in key:
+                    #     debug_raw_audio = processed_val
+                
+                # 2. 普通 Operator (针对 LoadVideo)
+                else:
+                    processed_val = operator(data[key])
+                    
+                    # 检测：如果 Operator 返回的是字典（且包含 start_idx），说明它是我们的 VideoLoader
+                    if isinstance(processed_val, dict) and "start_idx" in processed_val:
+                        # 提取 start_idx 存入 data 字典，供 Audio 使用
+                        data["video_start_idx"] = processed_val["start_idx"]
+                        data["actual_n"] = processed_val["actual_n"]
+                        # 真正的视频数据赋值回 key
+                        data[key] = processed_val["frames"]
+                        
+                        # 关键修改：创建视频数据的副本以避免in-place操作问题
+                        if torch.is_tensor(data[key]):
+                            data[key] = data[key].clone().detach()
+                        
+                        # debug_raw_video = processed_val["input_img_list"]
+                    else:
+                        # 确保其他类型的数据也不会在训练过程中被in-place修改111
+                        if torch.is_tensor(processed_val):
+                            processed_val = processed_val.clone().detach()
+                        data[key] = processed_val
+            # ================== 可视化查验模块 ==================
+            # print(f"data_id:{data_id}")
+            # should_debug = False
+            # if data_id % 200 == 0:
+            #     should_debug = True 
+                        
+            # if should_debug and debug_raw_video is not None and debug_raw_audio is not None:
+            #     save_dir = "./debug_vis_output_debug"
+            #     # 文件名带上 data_id 和 start_idx 方便追溯
+            #     start_idx = data.get("video_start_idx", 0)
+            #     filename = f"sample_{data_id:04d}_start{start_idx}.mp4"
+            #     save_path = os.path.join(save_dir, filename)
+                
+            #     try:
+            #         write_video_with_audio(
+            #             video_res=debug_raw_video, # numpy [T, H, W, C] # (57, 640, 480, 3)
+            #             audio_data=debug_raw_audio, # numpy [N] (60800)
+            #             tgt_fps=self.tgt_fps,              
+            #             save_path=save_path
+            #         )
+            #     except Exception as e:
+            #         print(f"[Debug Error] Failed to write video: {e}")
+            # # ===================================================
+            return data
+
+
+    def __len__(self):
+        if self.load_from_cache:
+            return len(self.cached_data) * self.repeat
+        else:
+            return len(self.data) * self.repeat
+        
+    def check_data_equal(self, data1, data2):
+        # Debug only
+        if len(data1) != len(data2):
+            return False
+        for k in data1:
+            if data1[k] != data2[k]:
+                return False
+        return True

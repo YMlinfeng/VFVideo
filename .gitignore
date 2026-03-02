@@ -35,7 +35,6 @@ diffsynth.egg-info/
 *.txt
 test/
 testdataset/
-data/
 .gradio/
 .cache/
 movement/
