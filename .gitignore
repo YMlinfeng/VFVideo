@@ -10,7 +10,7 @@ debug*
 *.ico
 logs
 models/
-data
+dataset
 *.csv
 *.json*
 __pycache__
