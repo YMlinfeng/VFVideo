@@ -57,8 +57,7 @@ mpirun --allow-run-as-root -np $np \
       --data_file_keys "video_path" \
       --dataset_num_workers 4 \
       --save_steps 200 \
-      --height 560 \
-      --width 480 \
+      --max_pixels 268800 \
       --num_frames 45 \
       --dataset_repeat 1 \
       --model_id_with_origin_paths "Wan-AI/Wan2.1-I2V-14B-720P:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.1-I2V-14B-720P:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.1-I2V-14B-720P:Wan2.1_VAE.pth,Wan-AI/Wan2.1-I2V-14B-720P:models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth" \
@@ -67,10 +66,13 @@ mpirun --allow-run-as-root -np $np \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0" \
+      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0" \
       --extra_inputs "input_image" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \
+      --enable_id_grid \
+      --id_grid_max_pixels 268800 \
+      --id_grid_num_frames 1 \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
 # --trainable_models "dit.audio_injector" \

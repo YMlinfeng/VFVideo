@@ -522,7 +522,7 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         # VAE Encode
         id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
         
-        return {"id_grid_latents": id_grid_latents}
+        return {"id_grid_latents": id_grid_latents} # ([1, 16, 11, 70, 60])
 
 
 
@@ -557,7 +557,7 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             noise = torch.concat((noise[:, :, -f:], noise[:, :, :-f]), dim=2)
         
-        return {"noise": noise} # ([1, 16, 15, 80, 70])
+        return {"noise": noise} # ([1, 16, 15, 80, 70]),([1, 16, 11, 46, 88])
     
 
 
@@ -672,12 +672,12 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
             end_image = pipe.preprocess_image(end_image.resize((width, height))).to(pipe.device)
             vae_input = torch.concat([image.transpose(0,1), torch.zeros(3, num_frames-2, height, width).to(image.device), end_image.transpose(0,1)],dim=1)
             msk[:, -1:] = 1
-        else:
+        else: # 3,40,h,w and 3,1,h,w
             vae_input = torch.concat([image.transpose(0, 1), torch.zeros(3, num_frames-1, height, width).to(image.device)], dim=1)
 
-        msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1)
-        msk = msk.view(1, msk.shape[1] // 4, 4, height//8, width//8)
-        msk = msk.transpose(1, 2)[0]
+        msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1) # 1,44,h,w
+        msk = msk.view(1, msk.shape[1] // 4, 4, height//8, width//8) # 1,11,4,h,w
+        msk = msk.transpose(1, 2)[0] # 4,11,h,w
         
         y = pipe.vae.encode([vae_input.to(dtype=pipe.torch_dtype, device=pipe.device)], device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride)[0]
         y = y.to(dtype=pipe.torch_dtype, device=pipe.device)
@@ -1268,15 +1268,15 @@ def make_grid_freqs(f, h, w, time_offset, head_dim, device):
     d_w = head_dim // 3
     
     # Time positions (negative for ID grid)
-    pos_f = torch.arange(time_offset, time_offset + f, device=device)
-    freqs_f = get_1d_freqs(pos_f, d_f, device=device)
+    pos_f = torch.arange(time_offset, time_offset + f, device=device) 
+    freqs_f = get_1d_freqs(pos_f, d_f, device=device) #(1,22)
     
     # Space positions
     pos_h = torch.arange(0, h, device=device)
-    freqs_h = get_1d_freqs(pos_h, d_h, device=device)
+    freqs_h = get_1d_freqs(pos_h, d_h, device=device) #(30,21)
     
     pos_w = torch.arange(0, w, device=device)
-    freqs_w = get_1d_freqs(pos_w, d_w, device=device)
+    freqs_w = get_1d_freqs(pos_w, d_w, device=device) #(33,21)
     
     # Broadcasting to (f, h, w)
     # freqs_f: (f, D_f) -> (f, 1, 1, D_f) -> (f, h, w, D_f)
@@ -1393,7 +1393,7 @@ def model_fn_wan_video(
     # Motion Controller
     if motion_bucket_id is not None and motion_controller is not None:
         t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
-    context = dit.text_embedding(context) #(1, 512, 1536)
+    context = dit.text_embedding(context) #(1, 512, 1536) 1,512,5120
 
     x = latents
     # Merged cfg
@@ -1440,32 +1440,28 @@ def model_fn_wan_video(
         b, c, t_g, h_g, w_g = id_grid_latents.shape
         
         # 1. 构造 Patch Embedding 输入
-        # 目标是匹配 dit.in_dim (对于 I2V 是 33: 16 latents + 1 mask + 16 y)
         # 我们将 id_grid 放在 "y" 的位置（条件），将 "x" 的位置（噪声）置零
-        # 结构: [zeros_x(16) | mask(1) | id_grid(16)]
+        # 结构: [zeros_x(16) | mask(4) | id_grid(16)]
         
         zeros_x = torch.zeros(b, 16, t_g, h_g, w_g, device=x.device, dtype=x.dtype)
-        mask_grid = torch.ones(b, 1, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
+        mask_grid = torch.ones(b, 4, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
         
-        # 确保 id_grid_latents 类型正确
         id_grid_latents = id_grid_latents.to(dtype=x.dtype)
-        
-        # 拼接
-        grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 33, T_g, H_g, W_g)
+        grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g)
         
         # 2. Patchify Grid
         # 使用 dit 的 patch_embedding 层
-        grid_tokens = dit.patch_embedding(grid_input)
+        grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 60, 66])->1,5120,1,30,33
         
         # Flatten
-        grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c')
+        grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c') # torch.Size([1, 11550, 5120])一帧的情况是990个token
         
         # 3. 计算 Grid Freqs (RoPE)
         # 获取 patch 后的维度
         pf, ph, pw = dit.patch_size
-        f_token = t_g // pf
-        h_token = h_g // ph
-        w_token = w_g // pw
+        f_token = t_g // pf # 1
+        h_token = h_g // ph # 30
+        w_token = w_g // pw # 33
         
         # 构造负时间索引，使 Grid 位于主视频之前
         # 主视频从 0 开始。Grid 从 -f_token 开始到 -1

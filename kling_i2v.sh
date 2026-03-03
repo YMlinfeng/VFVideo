@@ -22,6 +22,7 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --debug \
   --enable_id_grid \
   --id_grid_max_pixels 268800 \
+  --id_grid_num_frames 1 \
 2>&1 | tee "logs/[Debug]_wan_train_$(date +'%Y.%m.%d_%H:%M:%S').log"
 
   # --use_gradient_checkpointing_offload \

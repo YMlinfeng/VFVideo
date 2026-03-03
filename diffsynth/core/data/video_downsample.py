@@ -581,7 +581,7 @@ class FaceGrid:
         fh = max_y - min_y
         
         if target_w is not None and target_h is not None:
-            # 兼容固定宽高：强行保持目标长宽比，但不用 padding（听从 mentor 建议）
+            # 兼容固定宽高：强行保持目标长宽比
             base_size = max(fw, fh) * scale
             target_ar = target_w / target_h
             if target_ar >= 1:
@@ -626,21 +626,14 @@ class FaceGrid:
         支持固定长宽比 (传 h, w) 和等效面积 (传 max_pixels, 不传 h, w) 两种模式。
         """
         # 1. 数据切分为9份
-        grid_sources = np.split(source_frames, 9)
+        grid_sources = np.split(source_frames, 9) # (9, 536, 1024, 3)
         grid_landmarks = np.split(dwpose_np_face, 9)
         grid_landmarks_full = np.split(dwpose_np_full, 9)
         
         target_length = grid_sources[0].shape[0]
         
         # 决定九宫格的最终尺寸和单格尺寸
-        if h is not None and w is not None:
-            # 固定宽高模式
-            final_h = h
-            final_w = w
-            cell_w = w // 3
-            cell_h = h // 3
-            target_w_for_crop, target_h_for_crop = cell_w, cell_h
-        else:
+        if max_pixels is not None:
             # 等效面积模式
             # 随机取一帧来估计人脸自然长宽比
             lms_idx_est = random.randint(0, len(grid_landmarks[0])-1)
@@ -673,6 +666,13 @@ class FaceGrid:
             
             # 告诉 get_center_crop_face 不要强行矫正比例，用自然比例
             target_w_for_crop, target_h_for_crop = None, None
+        else:
+            # 固定宽高模式
+            final_h = h
+            final_w = w
+            cell_w = w // 3
+            cell_h = h // 3
+            target_w_for_crop, target_h_for_crop = cell_w, cell_h
 
         final_video_array = np.zeros((target_length, final_h, final_w, 3), dtype=np.uint8)
         
@@ -708,7 +708,7 @@ class FaceGrid:
                 lms_i_full = grid_landmarks_full[k][i]
                 
                 # --- 裁剪与缩放逻辑 (模拟) ---
-                # 如果是等效面积，target_* 为 None，使用人脸自然比例硬裁切。如果有拉伸那也是不同人脸本身的比例差异，mentor 要求不 padding
+                # 如果是等效面积，target_* 为 None，使用人脸自然比例硬裁切。如果有拉伸那也是不同人脸本身的比例差异
                 face_crop, lms_i_new = self.get_center_crop_face(img, lms, lms_i, scale=scale, target_w=target_w_for_crop, target_h=target_h_for_crop)
                 
                 if face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
@@ -738,11 +738,7 @@ class FaceGrid:
 
         return final_video_array
 
-    def read_video_frames(self, input_path, n):
-        """
-        阶段1：读取视频
-        根据 n 生成索引，一次性读取所有需要的原始帧。
-        """
+    def read_video_frames(self, input_path, target_length):
         try:
             vr = VideoReader(input_path, ctx=cpu(0))
         except Exception as e:
@@ -751,7 +747,6 @@ class FaceGrid:
         original_frames_count = len(vr)
         fps = vr.get_avg_fps()
         
-        target_length = 8 * n + 1
         total_samples = target_length * 9
         
         indices = np.linspace(0, original_frames_count - 1, total_samples, dtype=int).tolist()
@@ -898,9 +893,9 @@ class FaceGrid:
         return result_array[:,np.newaxis]
 
     # --- 主流程串联 ---
-    def execute(self, input_path, output_path, dwpose_path, fps, ori_fps, h=None, w=None, max_pixels=None, n=1, save=False):
+    def execute(self, input_path, output_path, dwpose_path, fps, ori_fps, h=None, w=None, max_pixels=None, target_length=1, save=False):
         # 1. 读
-        raw_frames, fps, indices = self.read_video_frames(input_path, n)
+        raw_frames, fps, indices = self.read_video_frames(input_path, target_length)
         ori_h, ori_w = raw_frames[0].shape[:2]
         dwpose_np = self.load_pose(dwpose_path, ori_h, ori_w, ori_fps, fps) #[n,1,134,3]
         indices[indices>dwpose_np.shape[0]-1] = dwpose_np.shape[0]-1

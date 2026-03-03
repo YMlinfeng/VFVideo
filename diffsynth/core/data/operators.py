@@ -712,17 +712,17 @@ class LoadIDGrid(DataProcessingOperator):
     - 输出值域为 [-1, 1]，与主视频一致
     - 九宫格的尺寸可以与主视频不同（会在 VAE 编码后统一处理）
     """
-    def __init__(self, num_frames=41, tgt_fps=15.0, height=None, width=None, max_pixels=268800, aug_intensity=1.9):
+    def __init__(self, id_grid_num_frames=1, tgt_fps=15.0, height=None, width=None, max_pixels=268800, aug_intensity=1.9):
         """
         Args:
-            num_frames: 目标帧数，应与主视频帧数一致
+            num_frames: 九宫格视频的独立帧数 (1表示退化为静态九宫格图片)
             tgt_fps: 目标帧率
-            height: 九宫格输出高度（可以与主视频不同）
-            width: 九宫格输出宽度（可以与主视频不同）
+            height: 九宫格输出高度（固定宽高模式用）
+            width: 九宫格输出宽度（固定宽高模式用）
             max_pixels: 九宫格输出等效面积（等效面积模式用）
             aug_intensity: 数据增强强度（控制亮度、对比度、饱和度等变化）
         """
-        self.num_frames = num_frames
+        self.id_grid_num_frames = id_grid_num_frames
         self.tgt_fps = tgt_fps
         self.height = height
         self.width = width
@@ -821,12 +821,6 @@ class LoadIDGrid(DataProcessingOperator):
         if dwpose_path is None:
             print(f"[LoadIDGrid] Warning: No pose file found for {video_path}")
         
-        # 计算 n 值 (FaceGrid 使用 8*n+1 的帧数)
-        # 确保与主视频帧数一致
-        n = (self.num_frames - 1) // 8
-        if n < 1:
-            n = 1
-        
         # 如果从 data 中可以获取动态算好的实际宽高，可以借用，或者纯依赖 max_pixels
         max_pixels_to_use = self.max_pixels
 
@@ -841,7 +835,7 @@ class LoadIDGrid(DataProcessingOperator):
             h=self.height,
             w=self.width,
             max_pixels=max_pixels_to_use,
-            n=n,
+            target_length=self.id_grid_num_frames,
             save=False
         )
         

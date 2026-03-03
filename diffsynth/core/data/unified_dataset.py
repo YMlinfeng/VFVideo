@@ -108,6 +108,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
         id_grid_width=480,     # 九宫格输出宽度
         id_grid_max_pixels=268800, # 九宫格等效面积 (等效面积模式)
         id_grid_aug_intensity=1.9,  # 数据增强强度
+        id_grid_num_frames=1,     # 九宫格参考视频帧数
         debug=False,           # 是否启用调试可视化
         debug_save_dir="./debug_vis",  # 调试输出目录
     ):
@@ -136,12 +137,12 @@ class UnifiedDataset(torch.utils.data.Dataset):
         self.id_grid_loader = None
         if enable_id_grid:
             self.id_grid_loader = LoadIDGrid(
-                num_frames=num_frames,
                 tgt_fps=tgt_fps,
                 height=id_grid_height,
                 width=id_grid_width,
                 max_pixels=id_grid_max_pixels,
                 aug_intensity=id_grid_aug_intensity,
+                id_grid_num_frames=id_grid_num_frames,
             )
         
         # ========== 调试可视化初始化 ==========
@@ -234,7 +235,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
                 id_grid_tensor = self.id_grid_loader(data)
                 # 将九宫格数据存入 data 字典
                 # id_grid_tensor 形状: (C, T, H, W)，值域 [-1, 1]
-                data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])
+                data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])->([3, 1, 480, 528]) 其中41和1是九宫格中每一个小格子的帧数，通过id_frames参数控制
                 
                 # Debug 可视化
                 if self.debug:

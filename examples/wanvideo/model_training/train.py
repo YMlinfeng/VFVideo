@@ -197,7 +197,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs_shared = {
             # 修改点：映射 video
             "input_video": data["video_path"], #fp32
-            "id_grid": data.get("id_grid"), # 九宫格ID注入
+            "id_grid": data.get("id_grid"), # 九宫格ID注入 vae压完之后：[1, 16, 11, 70, 60]
             # "height": data["video_path"][0].size[1],
             # "width": data["video_path"][0].size[0],
             "height": data["video_path"][0].shape[-2] if isinstance(data["video_path"][0], torch.Tensor) else data["video_path"][0].size[1],
@@ -252,6 +252,7 @@ def wan_parser():
     parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="Max pixels (equivalent area) for ID grid.")
     parser.add_argument("--id_grid_aug_intensity", type=float, default=1.9, help="Data augmentation intensity for ID grid.")
     parser.add_argument("--debug_save_dir", type=str, default="./debug_vis", help="Directory to save debug visualizations.")
+    parser.add_argument("--id_grid_num_frames", type=int, default=1, help="Number of frames for the ID grid (should match the num_frames for video).")
     return parser
 
 
@@ -315,6 +316,7 @@ if __name__ == "__main__":
         id_grid_width=args.id_grid_width,
         id_grid_max_pixels=args.id_grid_max_pixels,
         id_grid_aug_intensity=args.id_grid_aug_intensity,
+        id_grid_num_frames=args.id_grid_num_frames,
         debug=args.debug,
         debug_save_dir=args.debug_save_dir,
     )

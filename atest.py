@@ -87,7 +87,7 @@ def main():
         debugpy.wait_for_client()  
         print("Debugger attached! Continuing...")
     # 获取几条数据测试
-    for i in range(4):
+    for i in range(10):
         print(f"\nFetching sample {i}...")
         data = dataset[i]
         print(data)

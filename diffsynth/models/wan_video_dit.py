@@ -88,11 +88,11 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
     return freqs_cis
 
 
-def rope_apply(x, freqs, num_heads): # freps:(18000,40,64)
+def rope_apply(x, freqs, num_heads): # freps:(18000,40,64):https://www.yuque.com/yumulinfengfirepigreturn/rhlx3q/grml6sfpevaazi4c/edit?toc_node_uuid=QEEV3aQoEw5qJ4qm
     x = rearrange(x, "b s (n d) -> b s n d", n=num_heads) # x: (1, 18000, 40, 128)
     x_out = torch.view_as_complex(x.to(torch.float64).reshape( # view_as_complex: (1, 18000, 40, 64) dtype=complex128
         x.shape[0], x.shape[1], x.shape[2], -1, 2)) # reshape(..., -1, 2): (1, 18000, 40, 64, 2)
-    x_out = torch.view_as_real(x_out * freqs).flatten(2) # 这是RoPE的核心：复数乘法 = 旋转
+    x_out = torch.view_as_real(x_out * freqs).flatten(2) # freqs:[18000, 40, 64] 这是RoPE的核心：复数乘法 = 旋转
     # x_out * freqs: (1, 18000, 40, 64) 复数
     # view_as_real:  (1, 18000, 40, 64, 2) 实数
     #                                   ↑ (实部, 虚部)
@@ -300,6 +300,7 @@ class WanModel(torch.nn.Module):
         self.dim = dim
         self.in_dim = in_dim
         self.freq_dim = freq_dim
+        self.num_heads = num_heads
         self.has_image_input = has_image_input
         self.patch_size = patch_size
         self.seperated_timestep = seperated_timestep
