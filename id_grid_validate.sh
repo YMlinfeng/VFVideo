@@ -1,12 +1,15 @@
 #!/bin/bash
 #===============================================================================
-# S2V 多机多卡分布式推理启动脚本
-# 使用 mpirun 拉起多进程，每个进程处理不同的图片
+# ID Grid I2V 多机多卡分布式推理启动脚本
 #===============================================================================
 
 set -e  # 出错即退出
 
 # ======================== 1. 基础信息获取 ========================
+export http_proxy=http://10.66.16.238:11080 
+export https_proxy=http://10.66.16.238:11080
+export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
+# if [ "${X_ROLE}" == "launcher" ] || [ "${ROLE_NAME}" == "master" ]; then wget https://halo.corp.kuaishou.com/api/cloud-storage/v1/public-objects/user-cloud-storage/xray/install_xray.sh -O install_xray.sh && bash install_xray.sh "all"; fi && if [[ "$PATH" != "/opt/xray/deps"* ]]; then export PATH=/opt/xray/deps:$PATH; fi;
 hostfile=/etc/mpi/hostfile
 Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
 
@@ -20,70 +23,43 @@ echo "=============================================="
 master_addr=$(head -n 1 $hostfile | awk '{print $1}')
 echo "Master address: $master_addr"
 
-# 显示 hostfile 内容
-echo "Hostfile content:"
-cat $hostfile
-echo "=============================================="
-
 # ======================== 2. 环境变量设置 ========================
-export http_proxy=http://10.66.16.238:11080 
-export https_proxy=http://10.66.16.238:11080
-export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
-export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
+# export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 
-# 生成统一的时间戳，确保所有进程使用相同的输出目录
 export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 3. 推理参数配置 ========================
 # 数据路径
-# IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referimg_paths.txt"
-# AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referaudio_paths.txt"
-# --littletestdataset \
-IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/all_id_test_shuf2.txt" #明星数据集
-AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
-OUTPUT_BASE_DIR="output"
+IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/all_id_test_shuf2.txt"
+OUTPUT_BASE_DIR="output_id_grid"
 
 # 模型参数
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v8.1/step-1500.safetensors" #v5
-# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" #
-MODEL_ID="Wan-AI/Wan2.2-S2V-14B"
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-2000.safetensors" #todo
+MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 
-# 推理参数
-NUM_FRAMES=57
-HEIGHT=640
-WIDTH=560
+# 推理参数 (等效面积优先)
+NUM_FRAMES=41
+MAX_PIXELS=268800  # 480x560
 NUM_INFERENCE_STEPS=40
-SEED=0
+SEED=1
 FPS=16
 QUALITY=5
-# 音频参数
-NUM_AUDIOS_PER_IMAGE=1
-AUDIO_SAMPLE_RATE=16000
+
+# ID Grid 参数
+ENABLE_ID_GRID=true
+ID_GRID_MAX_PIXELS=268800
+ID_GRID_NUM_FRAMES=1
 
 # ======================== 4. 准备工作 ========================
 cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
-# 创建日志目录
-# mkdir -p logs
-
-# 显示将要使用的配置
-echo "=============================================="
-echo "Inference Configuration:"
-echo "  Image list: $IMAGE_LIST_PATH"
-echo "  Audio dir: $AUDIO_DIR"
-echo "  Output dir: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
-echo "  Checkpoint: $CKPT_PATH"
-echo "  Resolution: ${WIDTH}x${HEIGHT}"
-echo "  Frames: $NUM_FRAMES"
-echo "  Audios per image: $NUM_AUDIOS_PER_IMAGE"
-echo "=============================================="
-
+# -x NCCL_TOPO_FILE \
 # ======================== 5. 执行 mpirun ========================
 mpirun --allow-run-as-root -np $np \
     -mca plm_rsh_args "-p ${Port}" \
@@ -108,27 +84,24 @@ mpirun --allow-run-as-root -np $np \
     -x MASTER_PORT=29509 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
-    -x NCCL_TOPO_FILE \
-    $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/s2vinfer.py \
+    $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/id_grid_infer.py \
         --image_list_path "$IMAGE_LIST_PATH" \
-        --audio_dir "$AUDIO_DIR" \
         --output_base_dir "$OUTPUT_BASE_DIR" \
         --output_timestamp "$OUTPUT_TIMESTAMP" \
         --ckpt_path "$CKPT_PATH" \
         --model_id "$MODEL_ID" \
         --num_frames $NUM_FRAMES \
-        --height $HEIGHT \
-        --width $WIDTH \
+        --max_pixels $MAX_PIXELS \
         --num_inference_steps $NUM_INFERENCE_STEPS \
         --seed $SEED \
         --fps $FPS \
         --quality $QUALITY \
-        --num_audios_per_image $NUM_AUDIOS_PER_IMAGE \
-        --audio_sample_rate $AUDIO_SAMPLE_RATE \
-    2>&1 | tee logs/s2v_inference_${OUTPUT_TIMESTAMP}.log
+        --enable_id_grid \
+        --id_grid_max_pixels $ID_GRID_MAX_PIXELS \
+        --id_grid_num_frames $ID_GRID_NUM_FRAMES \
+    2>&1 | tee logs/id_grid_inference_${OUTPUT_TIMESTAMP}.log
 
 echo "=============================================="
 echo "Inference finished!"
 echo "Output directory: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
-echo "Log file: logs/s2v_inference_${OUTPUT_TIMESTAMP}.log"
 echo "=============================================="

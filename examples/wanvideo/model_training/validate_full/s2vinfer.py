@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument(
         "--image_list_path", 
         type=str, 
-        default="/m2v_intern/mengzijie/DiffSynth-Studio/data/all_id_test_shuf2.txt",
+        default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/all_id_test_shuf2.txt",
         help="Path to the text file containing image paths (one per line)"
     )
     parser.add_argument(

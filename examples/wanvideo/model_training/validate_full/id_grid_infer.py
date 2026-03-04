@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -12,9 +11,13 @@ import glob
 from pathlib import Path
 from PIL import Image, ImageOps
 import librosa
+import numpy as np
 from diffsynth.utils.data import save_video_with_audio
 from diffsynth.core import load_state_dict
 from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
+import warnings
+warnings.filterwarnings("ignore")
+
 os.environ['http_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['https_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['no_proxy'] = 'localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com'
@@ -65,20 +68,21 @@ def parse_args():
     parser.add_argument(
         "--ckpt_path", 
         type=str,
-        default="/m2v_intern/mengzijie/DiffSynth-Studio/models/train/单卡/step-800.safetensors",
+        default=None,
         help="Path to the checkpoint file"
     )
     parser.add_argument(
         "--model_id", 
         type=str, 
-        default="Wan-AI/Wan2.2-S2V-14B",
+        default="Wan-AI/Wan2.1-I2V-14B-720P",
         help="Model ID for the pipeline"
     )
     
     # ================== 推理参数 ==================
     parser.add_argument("--num_frames", type=int, default=81, help="Number of frames (4n+1)")
-    parser.add_argument("--height", type=int, default=832, help="Video height")
-    parser.add_argument("--width", type=int, default=448, help="Video width")
+    parser.add_argument("--height", type=int, default=None, help="Video height")
+    parser.add_argument("--width", type=int, default=None, help="Video width")
+    parser.add_argument("--max_pixels", type=int, default=268800, help="Equivalent area max pixels")
     parser.add_argument("--num_inference_steps", type=int, default=40, help="Number of inference steps")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--fps", type=int, default=16, help="Output video FPS")
@@ -88,6 +92,11 @@ def parse_args():
         action="store_true",
         help="If enabled, load audio in order (same as images) instead of random sampling"
     )
+
+    # ================== ID Grid 参数 (New) ==================
+    parser.add_argument("--enable_id_grid", action="store_true")
+    parser.add_argument("--id_grid_max_pixels", type=int, default=268800)
+    parser.add_argument("--id_grid_num_frames", type=int, default=1)
     
     # ================== 音频参数 ==================
     parser.add_argument(
@@ -184,7 +193,7 @@ def load_prompts(image_path, fps, rank):
     
     # Fallback to default positive prompt if not loaded
     if positive_prompt is None or positive_prompt == "":
-        positive_prompt = "a person is singing"
+        positive_prompt = "high quality, video"
         print(f"[RANK {rank}] [INFO] Using default positive prompt: {positive_prompt}")
     
     # Load negative prompt
@@ -223,11 +232,6 @@ def load_prompts(image_path, fps, rank):
 def generate_video_name(image_path, audio_path):
     """
     生成视频名称：图片路径最后三个关键词 + 音频文件名（不含后缀）
-    
-    示例：
-    - 图片路径: /path/to/复杂情况/何炅/2.png
-    - 音频路径: /path/to/英文_口播_正常节奏_老年男声_3.mp3
-    - 输出: 复杂情况_何炅_2_英文_口播_正常节奏_老年男声_3.mp4
     """
     # 解析图片路径
     image_parts = image_path.rstrip('/').split('/')
@@ -254,35 +258,13 @@ def load_pipeline(args, device):
     pipe = WanVideoPipeline.from_pretrained(
         torch_dtype=torch.bfloat16,
         device=device,
-        model_configs=[ #todo model_id到底叫啥
-            ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="diffusion_pytorch_model*.safetensors"),
-            ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"),
-            ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="Wan2.1_VAE.pth"),
-            ModelConfig(model_id="Wan-AI/Wan2.1-I2V-14B-720P", origin_file_pattern="models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"),
+        model_configs=[
+            ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors"),
+            ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"),
+            ModelConfig(model_id=args.model_id, origin_file_pattern="Wan2.1_VAE.pth"),
+            ModelConfig(model_id=args.model_id, origin_file_pattern="models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"),
         ],
     )
-    # pipe = WanVideoPipeline.from_pretrained(
-    #     torch_dtype=torch.bfloat16,
-    #     device=device,
-    #     model_configs=[
-    #         ModelConfig(
-    #             model_id=args.model_id, 
-    #             origin_file_pattern="diffusion_pytorch_model*.safetensors"
-    #         ),
-    #         ModelConfig(
-    #             model_id=args.model_id, 
-    #             origin_file_pattern="wav2vec2-large-xlsr-53-english/model.safetensors"
-    #         ),
-    #         ModelConfig(
-    #             model_id=args.model_id, 
-    #             origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"
-    #         ),
-    #         ModelConfig(
-    #             model_id=args.model_id, 
-    #             origin_file_pattern="Wan2.1_VAE.pth"
-    #         ),
-    #     ],
-    # )
 
     # 加载 checkpoint
     if args.ckpt_path and os.path.exists(args.ckpt_path):
@@ -300,23 +282,83 @@ def load_pipeline(args, device):
     return pipe
 
 
-def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt):
+def generate_id_grid(image, args):
+    """
+    Generate a 3x3 ID Grid tensor from a single input image.
+    Uses equivalent area logic and center cropping (simulating FaceGrid without pose).
+    """
+    if not args.enable_id_grid:
+        return None
+    
+    w, h = image.size
+    # 估算人脸/图像自然长宽比
+    face_ar = w / h
+    
+    # 计算 Grid 尺寸 (等效面积)
+    area = args.id_grid_max_pixels
+    grid_w_raw = (area * face_ar) ** 0.5
+    grid_h_raw = (area / face_ar) ** 0.5
+    
+    # 对齐到 48 (16*3)
+    final_w = int(round(grid_w_raw / 48) * 48)
+    final_h = int(round(grid_h_raw / 48) * 48)
+    if final_w == 0: final_w = 48
+    if final_h == 0: final_h = 48
+    
+    cell_w = final_w // 3
+    cell_h = final_h // 3
+    
+    # Center Crop & Resize to Cell
+    target_ar = cell_w / cell_h
+    img_ar = w / h
+    
+    if img_ar > target_ar:
+        new_w = int(h * target_ar)
+        offset = (w - new_w) // 2
+        crop = image.crop((offset, 0, offset + new_w, h))
+    else:
+        new_h = int(w / target_ar)
+        offset = (h - new_h) // 2
+        crop = image.crop((0, offset, w, offset + new_h))
+        
+    cell_img = crop.resize((cell_w, cell_h), Image.LANCZOS)
+    
+    # Create 3x3 Grid (Tiling)
+    grid_img = Image.new('RGB', (final_w, final_h))
+    for i in range(3):
+        for j in range(3):
+            grid_img.paste(cell_img, (i * cell_w, j * cell_h))
+            
+    # Convert to Tensor (C, T, H, W)
+    grid_np = np.array(grid_img)
+    grid_tensor = torch.from_numpy(grid_np).float() # (H, W, 3)
+    grid_tensor = grid_tensor.permute(2, 0, 1) # (3, H, W)
+    
+    # Stack T frames
+    grid_tensor = grid_tensor.unsqueeze(1).repeat(1, args.id_grid_num_frames, 1, 1) # (3, T, H, W)
+    
+    # Normalize [-1, 1]
+    grid_tensor = grid_tensor / 127.5 - 1.0
+    
+    return grid_tensor
+
+
+def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid=None, target_h=None, target_w=None):
     """
     Execute single inference.
-    
-    Args:
-        pipe: The pipeline object
-        image_path: Path to input image
-        audio_path: Path to input audio
-        args: Command line arguments
-        prompt: Positive prompt text
-        negative_prompt: Negative prompt text
     """
     # Load and process image
     input_image = Image.open(image_path).convert("RGB")
-    input_image = ImageOps.fit(input_image, (args.width, args.height), Image.LANCZOS)
     
-    # Load audio
+    # Resize to target (Equivalent Area) if specified
+    if target_h is not None and target_w is not None:
+        input_image = ImageOps.fit(input_image, (target_w, target_h), Image.LANCZOS)
+    else:
+        # Fallback to legacy
+        if args.width and args.height:
+             input_image = ImageOps.fit(input_image, (args.width, args.height), Image.LANCZOS)
+    
+    # Load audio (kept for filename compatibility)
     input_audio, sample_rate = librosa.load(audio_path, sr=args.audio_sample_rate)
     
     # Execute inference
@@ -326,12 +368,11 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt):
         negative_prompt=negative_prompt,
         seed=args.seed,
         num_frames=args.num_frames,
-        height=args.height,
-        width=args.width,
+        height=target_h if target_h else args.height,
+        width=target_w if target_w else args.width,
         tiled=True,
-        # audio_sample_rate=sample_rate,
-        # input_audio=input_audio,
-        num_inference_steps=args.num_inference_steps
+        num_inference_steps=args.num_inference_steps,
+        id_grid=id_grid # Pass ID Grid
     )
     
     return video
@@ -347,7 +388,7 @@ def save_inference_config(output_dir, args, rank):
     config_path = os.path.join(output_dir, "inference_config.txt")
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(f"=" * 60 + "\n")
-        f.write(f"S2V Inference Configuration\n")
+        f.write(f"ID Grid I2V Inference Configuration\n")
         f.write(f"Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"=" * 60 + "\n\n")
         
@@ -364,10 +405,16 @@ def save_inference_config(output_dir, args, rank):
         f.write(f"  num_frames: {args.num_frames}\n")
         f.write(f"  height: {args.height}\n")
         f.write(f"  width: {args.width}\n")
+        f.write(f"  max_pixels: {args.max_pixels}\n")
         f.write(f"  num_inference_steps: {args.num_inference_steps}\n")
         f.write(f"  seed: {args.seed}\n")
         f.write(f"  fps: {args.fps}\n")
         f.write(f"  quality: {args.quality}\n\n")
+        
+        f.write(f"[ID Grid]\n")
+        f.write(f"  enable_id_grid: {args.enable_id_grid}\n")
+        f.write(f"  id_grid_max_pixels: {args.id_grid_max_pixels}\n")
+        f.write(f"  id_grid_num_frames: {args.id_grid_num_frames}\n\n")
         
     print(f"[INFO] Saved config to: {config_path}")
 
@@ -376,20 +423,7 @@ def log_inference_detail(output_dir, video_name, image_path, audio_path, prompt,
     """
     记录每次推理的详细信息到日志文件
     """
-    log_path = os.path.join(output_dir, f"inference_details_rank{rank}.jsonl")
-    
-    import json
-    log_entry = {
-        "video_name": video_name,
-        "image_path": image_path,
-        "audio_path": audio_path,
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
-    
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    # ... (Original commented out)
 
 def main():
     args = parse_args()
@@ -496,6 +530,33 @@ def main():
             num_audios = min(args.num_audios_per_image, len(all_audio_files))
             selected_audios = random.sample(all_audio_files, num_audios)
         
+        # Load Image for Pre-processing (Generate Grid & Calc Size)
+        try:
+            pil_image = Image.open(image_path).convert("RGB")
+            
+            # Generate ID Grid
+            id_grid = generate_id_grid(pil_image, args)
+            if id_grid is not None:
+                id_grid = id_grid.to(device)
+
+            # Calculate Target H/W (Equivalent Area)
+            target_h, target_w = args.height, args.width
+            if target_h is None or target_w is None:
+                w, h = pil_image.size
+                if w * h > args.max_pixels:
+                    scale = (w * h / args.max_pixels) ** 0.5
+                    target_h = int(h / scale)
+                    target_w = int(w / scale)
+                else:
+                    target_h, target_w = h, w
+                # Align to 16
+                target_h = target_h // 16 * 16
+                target_w = target_w // 16 * 16
+        except Exception as e:
+            print(f"[RANK {rank}] Error loading image {image_path}: {e}")
+            fail_count += 1
+            continue
+
         for audio_idx, audio_path in enumerate(selected_audios):
             if not os.path.exists(audio_path):
                 print(f"[RANK {rank}] [WARN] Audio not found: {audio_path}, skipping...")
@@ -506,7 +567,8 @@ def main():
                 print(f"[RANK {rank}]   Audio [{audio_idx + 1}/{num_audios}]: {os.path.basename(audio_path)}")
                 
                 # 执行推理
-                video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt)
+                video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, 
+                                      id_grid=id_grid, target_h=target_h, target_w=target_w)
                 
                 # 生成视频名称
                 video_name = generate_video_name(image_path, audio_path)
@@ -548,27 +610,357 @@ def main():
 
 
 if __name__ == "__main__":
-    # if os.environ.get("LOCAL_RANK", "0") == "0":
-    #     import debugpy
-    #     debugpy.listen(("0.0.0.0", 5678))
-    #     print("=" * 50)
-    #     print("Waiting for debugger to attach on port 5678...")
-    #     print("=" * 50)
-    #     debugpy.wait_for_client()  
-    #     print("Debugger attached! Continuing...")
     main()
-    # all_img_list = open("/ytech_m2v2_hdd/liujiwen/audio_v3/Qwen3-VL/明星照/all_id_test_shuf2.txt").read().strip().split('\n')
-    # img_path1 = all_img_list[i]
-    # caption_txt_path = img_path1.replace('.png', '_2.txt')
-    # try:
-    #     negative_prompt = open(caption_txt_path.replace('_2.txt', '_negative_2.txt')).read().strip().replace('FPS-24', 'FPS-30').replace('\n', ' ')
-    # except:
-    #     negative_prompt = "FPS-30. The video plays in distorted slow motion with unstable speed and jittering frames. The camera captures the scene in slow motion. An abstract, computer-generated, unrealistic, animation, cartoon, scene with distorted and blurry visuals, with high saturation and high contrast. A deformed, disfigured figure without specific features, depicted as an illustration, with scene transition. The background is a collage of grainy textures and striped patterns, lacking clear visual content. The figure moves minimally with weak dynamics and a stuttering effect, displaying distorted and erratic motions. The style incorporates extremely high contrast and extremely high sharpness, combined with low-quality imagery, grainy effects, and includes logos and text elements. It is an unrealistic 3D animation. The camera employs disjointed and stuttering movements, inconsistent framing, and unstructured composition." 
-    # caption_txt_path = img_path1.replace('.png', '_2.txt')
 
-    # caption_txt_path = img_path1.replace('.png', '_2.txt')
-    # all_caption_list = open('/ytech_m2v2_hdd/liujiwen/audio_v3/m2v-diffusers/test2/all_caption.txt').read().strip().split('\n')
-    # try:
-    #     caption_str = open(caption_txt_path).read().strip().replace('FPS-24', 'FPS-30').replace('\n', ' ')
-    # except:
-    #     pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# #!/usr/bin/env python
+# # -*- coding: utf-8 -*-
+
+# import torch
+# import os
+# import argparse
+# import random
+# import datetime
+# import numpy as np
+# from PIL import Image, ImageOps
+# import librosa
+# from diffsynth.utils.data import save_video_with_audio
+# from diffsynth.core import load_state_dict
+# from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
+# import warnings
+# warnings.filterwarnings("ignore")
+
+# os.environ['http_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
+# os.environ['https_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
+# os.environ['no_proxy'] = 'localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com'
+
+# # 分布式环境支持
+# if "OMPI_COMM_WORLD_RANK" in os.environ:
+#     os.environ["RANK"] = os.environ["OMPI_COMM_WORLD_RANK"]
+#     os.environ["WORLD_SIZE"] = os.environ["OMPI_COMM_WORLD_SIZE"]
+#     os.environ["LOCAL_RANK"] = os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
+# elif "RANK" not in os.environ:
+#     os.environ.setdefault("RANK", "0")
+#     os.environ.setdefault("WORLD_SIZE", "1")
+#     os.environ.setdefault("LOCAL_RANK", "0")
+
+# def parse_args():
+#     parser = argparse.ArgumentParser(description="ID Grid I2V Inference Script")
+    
+#     # 基础参数
+#     parser.add_argument("--image_list_path", type=str, required=True)
+#     parser.add_argument("--audio_dir", type=str, default=None)
+#     parser.add_argument("--output_base_dir", type=str, default="output")
+#     parser.add_argument("--output_timestamp", type=str, default=None)
+    
+#     # 模型参数
+#     parser.add_argument("--ckpt_path", type=str, default=None)
+#     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P")
+    
+#     # 视频参数 (等效面积优先)
+#     parser.add_argument("--num_frames", type=int, default=81)
+#     parser.add_argument("--height", type=int, default=None)
+#     parser.add_argument("--width", type=int, default=None)
+#     parser.add_argument("--max_pixels", type=int, default=268800)
+    
+#     # 推理参数
+#     parser.add_argument("--num_inference_steps", type=int, default=40)
+#     parser.add_argument("--seed", type=int, default=42)
+#     parser.add_argument("--fps", type=int, default=16)
+#     parser.add_argument("--quality", type=int, default=5)
+    
+#     # ID Grid 参数
+#     parser.add_argument("--enable_id_grid", action="store_true")
+#     parser.add_argument("--id_grid_max_pixels", type=int, default=268800)
+#     parser.add_argument("--id_grid_num_frames", type=int, default=1)
+    
+#     # Audio
+#     parser.add_argument("--num_audios_per_image", type=int, default=1)
+#     parser.add_argument("--audio_sample_rate", type=int, default=16000)
+    
+#     # 分布式
+#     parser.add_argument("--rank", type=int, default=0)
+#     parser.add_argument("--world_size", type=int, default=1)
+#     parser.add_argument("--local_rank", type=int, default=0)
+
+#     return parser.parse_args()
+
+# def get_distributed_info(args):
+#     rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("RANK", args.rank)))
+#     world_size = int(os.environ.get("OMPI_COMM_WORLD_SIZE", os.environ.get("WORLD_SIZE", args.world_size)))
+#     local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", os.environ.get("LOCAL_RANK", args.local_rank)))
+#     return rank, world_size, local_rank
+
+# def load_pipeline(args, device):
+#     print(f"[INFO] Loading model: {args.model_id}")
+#     pipe = WanVideoPipeline.from_pretrained(
+#         torch_dtype=torch.bfloat16,
+#         device=device,
+#         model_configs=[
+#             ModelConfig(model_id=args.model_id, origin_file_pattern="diffusion_pytorch_model*.safetensors"),
+#             ModelConfig(model_id=args.model_id, origin_file_pattern="models_t5_umt5-xxl-enc-bf16.pth"),
+#             ModelConfig(model_id=args.model_id, origin_file_pattern="Wan2.1_VAE.pth"),
+#             ModelConfig(model_id=args.model_id, origin_file_pattern="models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"),
+#         ],
+#     )
+    
+#     if args.ckpt_path and os.path.exists(args.ckpt_path):
+#         print(f"[INFO] Loading checkpoint from: {args.ckpt_path}")
+#         state_dict = load_state_dict(args.ckpt_path)
+#         missing, unexpected = pipe.dit.load_state_dict(state_dict, strict=False)
+#         if missing: print(f"[WARNING] Missing keys: {len(missing)}")
+#         if unexpected: print(f"[WARNING] Unexpected keys: {len(unexpected)}")
+    
+#     return pipe
+
+# def generate_id_grid(image, args):
+#     """
+#     Generate a 3x3 ID Grid tensor from a single input image.
+#     Uses equivalent area logic and center cropping (simulating FaceGrid without pose).
+#     """
+#     if not args.enable_id_grid:
+#         return None
+    
+#     w, h = image.size
+#     # 估算人脸/图像自然长宽比
+#     face_ar = w / h
+    
+#     # 计算 Grid 尺寸 (等效面积)
+#     area = args.id_grid_max_pixels
+#     grid_w_raw = (area * face_ar) ** 0.5
+#     grid_h_raw = (area / face_ar) ** 0.5
+    
+#     # 对齐到 48 (16*3)
+#     final_w = int(round(grid_w_raw / 48) * 48)
+#     final_h = int(round(grid_h_raw / 48) * 48)
+#     if final_w == 0: final_w = 48
+#     if final_h == 0: final_h = 48
+    
+#     cell_w = final_w // 3
+#     cell_h = final_h // 3
+    
+#     # Center Crop & Resize to Cell
+#     target_ar = cell_w / cell_h
+#     img_ar = w / h
+    
+#     if img_ar > target_ar:
+#         new_w = int(h * target_ar)
+#         offset = (w - new_w) // 2
+#         crop = image.crop((offset, 0, offset + new_w, h))
+#     else:
+#         new_h = int(w / target_ar)
+#         offset = (h - new_h) // 2
+#         crop = image.crop((0, offset, w, offset + new_h))
+        
+#     cell_img = crop.resize((cell_w, cell_h), Image.LANCZOS)
+    
+#     # Create 3x3 Grid (Tiling)
+#     grid_img = Image.new('RGB', (final_w, final_h))
+#     for i in range(3):
+#         for j in range(3):
+#             grid_img.paste(cell_img, (i * cell_w, j * cell_h))
+            
+#     # Convert to Tensor (C, T, H, W)
+#     # T = args.id_grid_num_frames
+#     # We duplicate the grid image T times
+#     grid_np = np.array(grid_img)
+#     grid_tensor = torch.from_numpy(grid_np).float() # (H, W, 3)
+#     grid_tensor = grid_tensor.permute(2, 0, 1) # (3, H, W)
+    
+#     # Stack T frames
+#     grid_tensor = grid_tensor.unsqueeze(1).repeat(1, args.id_grid_num_frames, 1, 1) # (3, T, H, W)
+    
+#     # Normalize [-1, 1]
+#     grid_tensor = grid_tensor / 127.5 - 1.0
+    
+#     # Add Batch Dimension for Pipeline (B, C, T, H, W)
+#     # Actually pipeline expects unbatched usually? 
+#     # Pipeline.__call__ handles tensors.
+#     # Usually inputs are (C, T, H, W) and pipeline unsqueezes.
+#     # Let's verify WanVideoUnit_IDGridEmbedder.
+#     # It does `if id_grid.ndim == 4: unsqueeze`.
+#     # So we can return (3, T, H, W).
+    
+#     return grid_tensor
+
+
+# def load_prompts(image_path, fps, rank):
+#     """
+#     Load positive and negative prompts from text files.
+#     """
+#     base_path = image_path
+#     for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
+#         if image_path.endswith(ext):
+#             base_path = image_path[:-len(ext)]
+#             break
+    
+#     positive_prompt_path = base_path + '_2.txt'
+#     negative_prompt_path = base_path + '_negative_2.txt'
+    
+#     positive_prompt = None
+#     if os.path.exists(positive_prompt_path):
+#         try:
+#             with open(positive_prompt_path, 'r', encoding='utf-8') as f:
+#                 positive_prompt = f.read().strip()
+#             if 'FPS-30' in positive_prompt:
+#                 positive_prompt = positive_prompt.replace('FPS-30', f'FPS-{fps}')
+#         except Exception as e:
+#             print(f"[RANK {rank}] [WARN] Failed to read positive prompt: {e}")
+
+#     if positive_prompt is None or positive_prompt == "":
+#         print(f"[Bug] positive_prompt is None!!!")
+#         positive_prompt = "high quality, video"
+#         print(f"[RANK {rank}] [INFO] Using default positive prompt: {positive_prompt}")
+    
+#     negative_prompt = None
+#     if os.path.exists(negative_prompt_path):
+#         try:
+#             with open(negative_prompt_path, 'r', encoding='utf-8') as f:
+#                 negative_prompt = f.read().strip()
+#             if 'FPS-30' in negative_prompt:
+#                 negative_prompt = negative_prompt.replace('FPS-30', f'FPS-{fps}')
+#         except Exception as e:
+#             print(f"[RANK {rank}] [WARN] Failed to read negative prompt: {e}")
+
+#     # Fallback to default negative prompt if not loaded
+#     if negative_prompt is None or negative_prompt == "":
+#         negative_prompt = (
+#             f"FPS-{fps} The video plays in distorted slow motion with unstable speed and jittering frames. "
+#             "The camera captures the scene in slow motion. An abstract, computer-generated, unrealistic, "
+#             "animation, cartoon, scene with distorted and blurry visuals, with high saturation and high contrast. "
+#             "A deformed, disfigured figure without specific features, depicted as an illustration, with scene transition. "
+#             "The background is a collage of grainy textures and striped patterns, lacking clear visual content. "
+#             "The figure moves minimally with weak dynamics and a stuttering effect, displaying distorted and erratic motions. "
+#             "The style incorporates extremely high contrast and extremely high sharpness, combined with low-quality imagery, "
+#             "grainy effects, and includes logos and text elements. It is an unrealistic 3D animation. "
+#             "The camera employs disjointed and stuttering movements, inconsistent framing, and unstructured composition."
+#         )
+#         print(f"[RANK {rank}] [INFO] Using default negative prompt")
+    
+#     return positive_prompt, negative_prompt
+
+# def main():
+#     args = parse_args()
+#     rank, world_size, local_rank = get_distributed_info(args)
+    
+#     if not torch.cuda.is_available():
+#         raise RuntimeError("CUDA is not available")
+    
+#     torch.cuda.set_device(local_rank)
+#     device = f"cuda:{local_rank}"
+    
+#     # Create output dir
+#     timestamp = args.output_timestamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+#     output_dir = os.path.join(args.output_base_dir, f"output_{timestamp}")
+#     os.makedirs(output_dir, exist_ok=True)
+    
+#     # Load Model
+#     pipe = load_pipeline(args, device)
+    
+#     # Load Images
+#     with open(args.image_list_path, 'r', encoding='utf-8') as f:
+#         image_paths = [line.strip() for line in f if line.strip()]
+        
+#     my_indices = list(range(rank, len(image_paths), world_size))
+#     print(f"[RANK {rank}] Processing {len(my_indices)} images")
+    
+#     for idx in my_indices:
+#         image_path = image_paths[idx]
+#         if not os.path.exists(image_path): continue
+        
+#         print(f"[RANK {rank}] Processing {image_path}")
+        
+#         try:
+#             # Load Prompts
+#             prompt, negative_prompt = load_prompts(image_path, args.fps, rank)
+            
+#             # Load Image
+#             input_image = Image.open(image_path).convert("RGB") #! 无需调整大小
+            
+#             # Generate ID Grid
+#             id_grid = generate_id_grid(input_image, args)
+#             if id_grid is not None:
+#                 id_grid = id_grid.to(device)
+            
+#             # Determine Main Video Size (Equivalent Area)
+#             target_h = args.height
+#             target_w = args.width
+            
+#             if target_h is None or target_w is None:
+#                 w, h = input_image.size
+#                 if w * h > args.max_pixels:
+#                     scale = (w * h / args.max_pixels) ** 0.5
+#                     target_h = int(h / scale)
+#                     target_w = int(w / scale)
+#                 else:
+#                     target_h, target_w = h, w
+#                 # Align to 16
+#                 target_h = target_h // 16 * 16
+#                 target_w = target_w // 16 * 16
+
+#             video = pipe(
+#                 prompt=prompt,
+#                 negative_prompt=negative_prompt,
+#                 input_image=input_image,
+#                 num_frames=args.num_frames,
+#                 height=target_h,
+#                 width=target_w,
+#                 num_inference_steps=args.num_inference_steps,
+#                 seed=args.seed,
+#                 id_grid=id_grid
+#             )
+            
+#             save_name = os.path.join(output_dir, os.path.basename(image_path).split('.')[0] + ".mp4")
+#             save_video_with_audio(video, save_name, None, fps=args.fps, quality=args.quality)
+#             print(f"[RANK {rank}] Saved {save_name}")
+            
+#         except Exception as e:
+#             print(f"[RANK {rank}] Error processing {image_path}: {e}")
+#             import traceback
+#             traceback.print_exc()
+
+# if __name__ == "__main__":
+#     # if os.environ.get("LOCAL_RANK", "0") == "0":
+#     #         print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
+#     #         print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
+#     #         import debugpy
+#     #         debugpy.listen(("0.0.0.0", 5678))
+#     #         print("=" * 50)
+#     #         print("Waiting for debugger to attach on port 5678...")
+#     #         print("=" * 50)
+#     #         debugpy.wait_for_client()  
+#     #         print("Debugger attached! Continuing...")
+#     main()

@@ -214,4 +214,5 @@ def merge_video_audio(video_path: str, audio_path: str):
 
 def save_video_with_audio(frames, save_path, audio_path, fps=16, quality=9, ffmpeg_params=None):
     save_video(frames, save_path, fps, quality, ffmpeg_params)
-    merge_video_audio(save_path, audio_path)
+    if audio_path is not None:
+        merge_video_audio(save_path, audio_path)

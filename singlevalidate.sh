@@ -34,7 +34,7 @@ echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 2. 推理参数配置 ========================
 # 数据路径
-IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/all_id_test_shuf2.txt" 
+IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/all_id_test_shuf2.txt" 
 AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" 
 OUTPUT_BASE_DIR="output"
 

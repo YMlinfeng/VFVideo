@@ -41,3 +41,4 @@ movement/
 __MACOSX/
 .gradio/
 output_vace_*
+output_id_grid

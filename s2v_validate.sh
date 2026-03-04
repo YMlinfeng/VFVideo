@@ -7,10 +7,6 @@
 set -e  # 出错即退出
 
 # ======================== 1. 基础信息获取 ========================
-export http_proxy=http://10.66.16.238:11080 
-export https_proxy=http://10.66.16.238:11080
-export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
-# if [ "${X_ROLE}" == "launcher" ] || [ "${ROLE_NAME}" == "master" ]; then wget https://halo.corp.kuaishou.com/api/cloud-storage/v1/public-objects/user-cloud-storage/xray/install_xray.sh -O install_xray.sh && bash install_xray.sh "all"; fi && if [[ "$PATH" != "/opt/xray/deps"* ]]; then export PATH=/opt/xray/deps:$PATH; fi;
 hostfile=/etc/mpi/hostfile
 Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
 
@@ -30,6 +26,9 @@ cat $hostfile
 echo "=============================================="
 
 # ======================== 2. 环境变量设置 ========================
+export http_proxy=http://10.66.16.238:11080 
+export https_proxy=http://10.66.16.238:11080
+export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
@@ -46,21 +45,20 @@ echo "Output timestamp: $OUTPUT_TIMESTAMP"
 # AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referaudio_paths.txt"
 # --littletestdataset \
 IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/all_id_test_shuf2.txt" #明星数据集
-AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio" # 明星数据集
+AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio" # 明星数据集
 OUTPUT_BASE_DIR="output"
 
 # 模型参数
-# CKPT_PATH=""
-# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v8.1/step-1500.safetensors" #v5
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-10000.safetensors" #
-MODEL_ID="PAI/Wan2.1-Fun-14B-InP"
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/s2v_v8.1/step-1500.safetensors" #v5
+# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" #
+MODEL_ID="Wan-AI/Wan2.2-S2V-14B"
 
 # 推理参数
-NUM_FRAMES=45
-HEIGHT=560
-WIDTH=480
+NUM_FRAMES=57
+HEIGHT=640
+WIDTH=560
 NUM_INFERENCE_STEPS=40
-SEED=1
+SEED=0
 FPS=16
 QUALITY=5
 # 音频参数
@@ -111,7 +109,7 @@ mpirun --allow-run-as-root -np $np \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
     -x NCCL_TOPO_FILE \
-    $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/i2vinfer.py \
+    $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/s2vinfer.py \
         --image_list_path "$IMAGE_LIST_PATH" \
         --audio_dir "$AUDIO_DIR" \
         --output_base_dir "$OUTPUT_BASE_DIR" \
@@ -127,10 +125,10 @@ mpirun --allow-run-as-root -np $np \
         --quality $QUALITY \
         --num_audios_per_image $NUM_AUDIOS_PER_IMAGE \
         --audio_sample_rate $AUDIO_SAMPLE_RATE \
-    2>&1 | tee logs/i2v_inference_${OUTPUT_TIMESTAMP}.log
+    2>&1 | tee logs/s2v_inference_${OUTPUT_TIMESTAMP}.log
 
 echo "=============================================="
 echo "Inference finished!"
 echo "Output directory: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
-echo "Log file: logs/i2v_inference_${OUTPUT_TIMESTAMP}.log"
+echo "Log file: logs/s2v_inference_${OUTPUT_TIMESTAMP}.log"
 echo "=============================================="

@@ -409,6 +409,7 @@ class WanVideoPipeline(BasePipeline):
         # progress_bar
         progress_bar_cmd=tqdm,
         output_type: Optional[Literal["quantized", "floatpoint"]] = "quantized",
+        id_grid: Optional[torch.Tensor] = None, #type:ignore
     ):
         # Scheduler
         self.scheduler.set_timesteps(num_inference_steps, denoising_strength=denoising_strength, shift=sigma_shift)
@@ -443,6 +444,7 @@ class WanVideoPipeline(BasePipeline):
             "s2v_pose_video": s2v_pose_video, "audio_embeds": audio_embeds, "s2v_pose_latents": s2v_pose_latents, "motion_video": motion_video,
             "animate_pose_video": animate_pose_video, "animate_face_video": animate_face_video, "animate_inpaint_video": animate_inpaint_video, "animate_mask_video": animate_mask_video,
             "vap_video": vap_video, 
+            "id_grid": id_grid,
         }
         for unit in self.units:
             inputs_shared, inputs_posi, inputs_nega = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
@@ -513,7 +515,7 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         pipe.load_models_to_device(self.onload_model_names)
         
         # 确保在正确的 device
-        id_grid = id_grid.to(pipe.device)
+        id_grid = id_grid.to(pipe.device, dtype=pipe.torch_dtype)
         
         # 修复 IndexError: 处理 DataLoader 未能正确添加 batch 维度的情况 (比如单卡单样本训练且没走 collate)
         if id_grid.ndim == 4:
