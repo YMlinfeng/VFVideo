@@ -9,7 +9,6 @@ set -e  # 出错即退出
 export http_proxy=http://10.66.16.238:11080 
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
-# if [ "${X_ROLE}" == "launcher" ] || [ "${ROLE_NAME}" == "master" ]; then wget https://halo.corp.kuaishou.com/api/cloud-storage/v1/public-objects/user-cloud-storage/xray/install_xray.sh -O install_xray.sh && bash install_xray.sh "all"; fi && if [[ "$PATH" != "/opt/xray/deps"* ]]; then export PATH=/opt/xray/deps:$PATH; fi;
 hostfile=/etc/mpi/hostfile
 Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
 
@@ -28,26 +27,27 @@ export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
 export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
-# export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
+export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 
 export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 3. 推理参数配置 ========================
-# 数据路径
-IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/all_id_test_shuf2.txt"
+# 数据路径 (更新为 CSV 路径)
+DATASET_METADATA_PATH="dataset/all_id_test_shuf2.csv"
 OUTPUT_BASE_DIR="output_id_grid"
 
 # 模型参数
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-2000.safetensors" #todo
+# 请修改为您训练好的 Checkpoint 路径
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 
 # 推理参数 (等效面积优先)
 NUM_FRAMES=41
 MAX_PIXELS=268800  # 480x560
 NUM_INFERENCE_STEPS=40
-SEED=1
-FPS=16
+SEED=42
+FPS=15
 QUALITY=5
 
 # ID Grid 参数
@@ -59,7 +59,6 @@ ID_GRID_NUM_FRAMES=1
 cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
-# -x NCCL_TOPO_FILE \
 # ======================== 5. 执行 mpirun ========================
 mpirun --allow-run-as-root -np $np \
     -mca plm_rsh_args "-p ${Port}" \
@@ -84,8 +83,9 @@ mpirun --allow-run-as-root -np $np \
     -x MASTER_PORT=29509 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
+    -x NCCL_TOPO_FILE \
     $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/id_grid_infer.py \
-        --image_list_path "$IMAGE_LIST_PATH" \
+        --dataset_metadata_path "$DATASET_METADATA_PATH" \
         --output_base_dir "$OUTPUT_BASE_DIR" \
         --output_timestamp "$OUTPUT_TIMESTAMP" \
         --ckpt_path "$CKPT_PATH" \
