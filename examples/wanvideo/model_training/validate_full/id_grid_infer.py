@@ -193,7 +193,7 @@ def load_prompts(image_path, fps, rank):
     
     # Fallback to default positive prompt if not loaded
     if positive_prompt is None or positive_prompt == "":
-        positive_prompt = "high quality, video"
+        positive_prompt = "high quality, video, The character turns their head left and right slowly while speaking."
         print(f"[RANK {rank}] [INFO] Using default positive prompt: {positive_prompt}")
     
     # Load negative prompt
@@ -459,7 +459,7 @@ def main():
     print(f"[RANK {rank}] Output directory: {output_dir}")
     
     # ================== 读取图片列表 ==================
-    with open(args.image_list_path, 'r', encoding='utf-8') as f:
+    with open(args.image_list_path, 'r', encoding='utf-8') as f: #todo
         image_paths = [line.strip() for line in f if line.strip()]
     
     total_images = len(image_paths)
@@ -610,6 +610,16 @@ def main():
 
 
 if __name__ == "__main__":
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
+        print(f"OMPI_COMM_WORLD_RANK={os.environ.get('OMPI_COMM_WORLD_RANK')}")
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("=" * 50)
+        print("Waiting for debugger to attach on port 5678...")
+        print("=" * 50)
+        debugpy.wait_for_client()  
+        print("Debugger attached! Continuing...")
     main()
 
 

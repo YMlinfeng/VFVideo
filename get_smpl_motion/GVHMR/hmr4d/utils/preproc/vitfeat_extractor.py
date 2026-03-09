@@ -1,0 +1,80 @@
+import torch
+from ...network.hmr2 import load_hmr2, HMR2
+
+
+from ..video_io_utils import read_video_np
+import cv2
+import numpy as np
+
+from ...network.hmr2.utils.preproc import crop_and_resize, IMAGE_MEAN, IMAGE_STD
+from tqdm import tqdm
+
+
+def get_batch(video_np, bbx_xys, img_ds=0.5, img_dst_size=256, path_type="video"):
+    
+    m = bbx_xys.shape[0]
+    n = len(video_np)
+    imgs = [cv2.resize(video_np[min(i,n-1)],None,fx=img_ds,fy=img_ds,interpolation=cv2.INTER_AREA) for i in range(m)]
+    imgs = np.array(imgs)
+
+    gt_center = bbx_xys[:, :2]
+    gt_bbx_size = bbx_xys[:, 2]
+
+    # Blur image to avoid aliasing artifacts
+    if True:
+        gt_bbx_size_ds = gt_bbx_size * img_ds
+        ds_factors = ((gt_bbx_size_ds * 1.0) / img_dst_size / 2.0).numpy()
+        imgs = np.stack(
+            [
+                # gaussian(v, sigma=(d - 1) / 2, channel_axis=2, preserve_range=True) if d > 1.1 else v
+                cv2.GaussianBlur(v, (5, 5), (d - 1) / 2) if d > 1.1 else v
+                for v, d in zip(imgs, ds_factors)
+            ]
+        )
+
+    # Output
+    imgs_list = []
+    bbx_xys_ds_list = []
+    for i in range(len(imgs)):
+        img, bbx_xys_ds = crop_and_resize(
+            imgs[i],
+            gt_center[i] * img_ds,
+            gt_bbx_size[i] * img_ds,
+            img_dst_size,
+            enlarge_ratio=1.0,
+        )
+        imgs_list.append(img)
+        bbx_xys_ds_list.append(bbx_xys_ds)
+    imgs = torch.from_numpy(np.stack(imgs_list))  # (F, 256, 256, 3), RGB
+    bbx_xys = torch.from_numpy(np.stack(bbx_xys_ds_list)) / img_ds  # (F, 3)
+
+    imgs = ((imgs / 255.0 - IMAGE_MEAN) / IMAGE_STD).permute(0, 3, 1, 2)  # (F, 3, 256, 256
+    return imgs, bbx_xys
+
+
+class Extractor:
+    def __init__(self, model_pth, tqdm_leave=True):
+        self.extractor: HMR2 = load_hmr2(model_pth).cuda().eval()
+        self.tqdm_leave = tqdm_leave
+
+    def extract_video_features(self, video_np, bbx_xys, img_ds=0.5):
+        """
+        img_ds makes the image smaller, which is useful for faster processing
+        """
+
+        imgs, bbx_xys = get_batch(video_np, bbx_xys, img_ds=img_ds)
+
+        # Inference
+        F, _, H, W = imgs.shape  # (F, 3, H, W)
+        imgs = imgs.cuda()
+        batch_size = 16  # 5GB GPU memory, occupies all CUDA cores of 3090
+        features = []
+        for j in tqdm(range(0, F, batch_size), desc="HMR2 Feature", leave=self.tqdm_leave):
+            imgs_batch = imgs[j : j + batch_size]
+
+            with torch.no_grad():
+                feature = self.extractor({"img": imgs_batch})
+                features.append(feature.detach().cpu())
+
+        features = torch.cat(features, dim=0).clone()  # (F, 1024)
+        return features

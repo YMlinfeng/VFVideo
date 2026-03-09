@@ -42,3 +42,8 @@ __MACOSX/
 .gradio/
 output_vace_*
 output_id_grid
+failcase
+generation
+temp
+get_smpl_motion/test
+get_smpl_motion/口型拒识待优化样例
