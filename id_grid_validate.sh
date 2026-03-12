@@ -28,6 +28,8 @@ export PATH=/opt/xray/deps:$PATH
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
 export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
+# 将 get_smpl_motion 所在的父目录加入 Python 搜索路径
+export PYTHONPATH=$PYTHONPATH:/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion
 
 export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 echo "Output timestamp: $OUTPUT_TIMESTAMP"
@@ -39,7 +41,8 @@ OUTPUT_BASE_DIR="output_id_grid"
 
 # 模型参数
 # 请修改为您训练好的 Checkpoint 路径
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
+# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-2000.safetensors" 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 
 # 推理参数 (等效面积优先)

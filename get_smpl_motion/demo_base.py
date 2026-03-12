@@ -1,3 +1,26 @@
+import inspect
+import numpy as np
+from collections import namedtuple
+
+# === 1. 修复 inspect 兼容性 (针对 Python 3.11/3.12) ===
+if not hasattr(inspect, 'getargspec'):
+    ArgSpec = namedtuple('ArgSpec', ['args', 'varargs', 'keywords', 'defaults'])
+    def getargspec(func):
+        spec = inspect.getfullargspec(func)
+        return ArgSpec(spec.args, spec.varargs, spec.varkw, spec.defaults)
+    inspect.getargspec = getargspec
+    inspect.ArgSpec = ArgSpec
+
+# === 2. 修复 numpy 兼容性 (针对 NumPy 1.24+) ===
+# 这里的目的是把 numpy 删掉的那些别名手动塞回去
+# 这样 chumpy 执行 'from numpy import bool' 时才不会报错
+if not hasattr(np, 'bool'): np.bool = bool
+if not hasattr(np, 'int'): np.int = int
+if not hasattr(np, 'float'): np.float = float
+if not hasattr(np, 'complex'): np.complex = complex
+if not hasattr(np, 'object'): np.object = object
+if not hasattr(np, 'str'): np.str = str
+if not hasattr(np, 'unicode'): np.unicode = str
 import sys, os
 import time
 import cv2
@@ -44,12 +67,12 @@ if __name__ == "__main__":
 
     input_id_image_path_list = ['/ytech_milm/mengzijie/DiffSynth-Studio/movement/image/多ID图注入/复杂情况/周星驰/zhouxingchi_14.png',
     '/ytech_milm/mengzijie/DiffSynth-Studio/movement/image/多ID图注入/复杂情况/周星驰/zhouxingchi_2.png', 
-    '/ytech_m2v2_hdd/liujiwen/ID_Encoder/motion/show/ttttt.png']
+    "/m2v_intern/mengzijie/DiffSynth-Studio/dataset/traindataset/ID_Encoder/周星驰.png"] 
 
     input_id_image_list_binary = [load_binary(input_id_image_path) for input_id_image_path in input_id_image_path_list]
 
     video_path = '/ytech_m2v2_hdd/liujiwen/audio_v3/Qwen3-VL/video_id_test_dataset_all/video_id_test_0114/id.mp4'
-    imgae_path = '/ytech_m2v2_hdd/liujiwen/ID_Encoder/motion/show/ttttt.png'
+    imgae_path = '/m2v_intern/mengzijie/DiffSynth-Studio/dataset/traindataset/ID_Encoder/zhouxingchicelian.png'
     with open(video_path, "rb") as f:
         video_data = f.read()
     with open(imgae_path, "rb") as f:

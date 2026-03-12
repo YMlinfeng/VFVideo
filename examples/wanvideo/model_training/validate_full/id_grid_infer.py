@@ -1,6 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# Monkey Patch
+#====================================================
+import inspect
+import numpy as np
+from collections import namedtuple
 
+# === 1. 修复 inspect 兼容性 (针对 Python 3.11/3.12) ===
+if not hasattr(inspect, 'getargspec'):
+    ArgSpec = namedtuple('ArgSpec', ['args', 'varargs', 'keywords', 'defaults'])
+    def getargspec(func):
+        spec = inspect.getfullargspec(func)
+        return ArgSpec(spec.args, spec.varargs, spec.varkw, spec.defaults)
+    inspect.getargspec = getargspec
+    inspect.ArgSpec = ArgSpec
+
+# === 2. 修复 numpy 兼容性 (针对 NumPy 1.24+) ===
+# 这里的目的是把 numpy 删掉的那些别名手动塞回去
+# 这样 chumpy 执行 'from numpy import bool' 时才不会报错
+if not hasattr(np, 'bool'): np.bool = bool
+if not hasattr(np, 'int'): np.int = int
+if not hasattr(np, 'float'): np.float = float
+if not hasattr(np, 'complex'): np.complex = complex
+if not hasattr(np, 'object'): np.object = object
+if not hasattr(np, 'str'): np.str = str
+if not hasattr(np, 'unicode'): np.unicode = str
+#====================================================
 import torch
 import os
 import sys
@@ -21,11 +46,7 @@ warnings.filterwarnings("ignore")
 
 # 引入项目根目录，以便导入 get_smpl_motion
 sys.path.append(os.getcwd())
-try:
-    from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer # 导入人脸裁剪和九宫格构建模块
-except ImportError:
-    print("[WARN] Failed to import SmplInfer from get_smpl_motion. Make sure it exists in the root path.")
-    SmplInfer = None
+from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer # 导入人脸裁剪和九宫格构建模块
 
 os.environ['http_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['https_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
@@ -45,10 +66,10 @@ def parse_args():
     
     # 按照要求，将所有参数独立在一行，且默认值和 id_grid_validate.sh 完全一致
     parser.add_argument("--dataset_metadata_path", type=str, default="dataset/all_id_test_shuf2.csv", help="Path to the CSV dataset") # 使用 CSV 文件
-    parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/data/audio", help="Audio directory") # 音频目录
+    parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors", help="Model checkpoint path") # 模型路径
+    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-2000.safetensors", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
@@ -110,7 +131,7 @@ def load_prompts(image_path, fps, rank):
             positive_prompt = None
     
     if positive_prompt is None or positive_prompt == "":
-        positive_prompt = "high quality, video, The character turns their head left and right slowly while speaking."
+        positive_prompt = "high quality, video, The character turns their head left and right slowly while speaking." #todo
         use_default_pos = True
         
     negative_prompt = None
@@ -237,7 +258,7 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer):
     if final_w == 0: final_w = 48
     if final_h == 0: final_h = 48
 
-    debug_dir = os.path.join(args.output_base_dir, 'debug_face_grid')
+    debug_dir = os.path.join(args.output_base_dir, '[ID]_debug_face_grid')
     os.makedirs(debug_dir, exist_ok=True)
     
     # 核心调用：使用提供的 get_face_grid 获取多帧九宫格数组
@@ -249,9 +270,9 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer):
         target_size=[final_h, final_w], 
         save_path_dir=debug_dir
     )
-    
-    if not res:
-        return None
+    print (len(res))
+    cv2.imwrite('./debug1.png', res[0][:,:,::-1])
+    cv2.imwrite('./debug2.png', res[-1][:,:,::-1])
         
     frames = []
     for frame_np in res:
@@ -309,15 +330,15 @@ def save_inference_config(output_dir, args, rank):
         f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n")
 
 def main():
+    # 初始化逻辑
     args = parse_args()
+    args.enable_id_grid = True 
     rank, world_size, local_rank = get_distributed_info(args)
-    
     if not torch.cuda.is_available(): raise RuntimeError("CUDA is not available")
     num_gpus = torch.cuda.device_count()
     if local_rank >= num_gpus: local_rank = 0
     torch.cuda.set_device(local_rank)
     device = f"cuda:{local_rank}"
-    
     # Init output and config
     timestamp = args.output_timestamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(args.output_base_dir, f"output_{timestamp}")
@@ -332,12 +353,13 @@ def main():
     else:
         smpl_infer = None
 
-    # Parse dataset (CSV parsing instead of txt)
+    # 数据集 Parse dataset (CSV parsing instead of txt) 
     try:
         df = pd.read_csv(args.dataset_metadata_path)
         if 'image' not in df.columns:
             raise ValueError(f"Column 'image' not found in CSV {args.dataset_metadata_path}")
         total_images = len(df)
+        print(f"total_images:{total_images}")
         my_indices = list(range(rank, total_images, world_size))
         print(f"[RANK {rank}] Loaded CSV with {total_images} rows. Processing {len(my_indices)} rows.")
     except Exception as e:
@@ -352,7 +374,6 @@ def main():
         all_audio_files = get_all_audio_files(args.audio_dir)
 
     random.seed(args.seed + rank)
-    
     success_count = 0
     fail_count = 0
     default_prompt_count = 0 # 记录缺失 prompt 的数量
@@ -396,7 +417,8 @@ def main():
         for audio_idx, audio_path in enumerate(selected_audios):
             if not os.path.exists(audio_path): continue
             
-            try:
+            # try:
+            if True:
                 # 生成九宫格
                 id_grid = generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer)
                 if id_grid is not None:
@@ -412,7 +434,7 @@ def main():
                         target_h = int(h / scale)
                         target_w = int(w / scale)
                     else:
-                        target_h, target_w = h, w
+                        target_h, target_w = h, w 
                     target_h = target_h // 16 * 16 # VAE 需要 16 的倍数
                     target_w = target_w // 16 * 16
 
@@ -428,12 +450,20 @@ def main():
                 save_video_with_audio(video, video_save_path, audio_path, fps=args.fps, quality=args.quality)
                 success_count += 1
                 
-            except Exception as e:
-                print(f"[RANK {rank}] [ERROR] Failed: {e}")
-                fail_count += 1
+            # except Exception as e: #todo
+            #     print(f"[RANK {rank}] [ERROR] Failed: {e}")
+            #     fail_count += 1
                 
     print(f"\n[RANK {rank}] Inference done! Success: {success_count}, Fail: {fail_count}")
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("=" * 50)
+        print("Waiting for debugger to attach on port 5678...")
+        print("=" * 50)
+        debugpy.wait_for_client()  
+        print("Debugger attached! Continuing...")
     main()
