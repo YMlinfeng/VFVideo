@@ -415,7 +415,7 @@ class PipelineUnitRunner:
         pass
 
     def __call__(self, unit: PipelineUnit, pipe: BasePipeline, inputs_shared: dict, inputs_posi: dict, inputs_nega: dict) -> tuple[dict, dict]: #type:ignore
-        if unit.take_over:
+        if unit.take_over: #s2v
             # Let the pipeline unit take over this function.
             inputs_shared, inputs_posi, inputs_nega = unit.process(pipe, inputs_shared=inputs_shared, inputs_posi=inputs_posi, inputs_nega=inputs_nega)
         elif unit.seperate_cfg:

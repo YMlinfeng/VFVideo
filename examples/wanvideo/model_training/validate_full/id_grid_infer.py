@@ -1,5 +1,14 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
+#todo：修改保存逻辑，把九宫格和原始id参考都保存到推理结果文件夹中
+import os
+import sys
+sys.path.append(os.getcwd())
+sys.path.append(os.path.abspath("/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"))
+# 引入项目根目录，以便导入 get_smpl_motion
+sys.path.append(os.getcwd())
+from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer # 导入人脸裁剪和九宫格构建模块
+sys.path.append(os.path.abspath("/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"))
 # Monkey Patch
 #====================================================
 import inspect
@@ -44,10 +53,6 @@ from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
 import warnings
 warnings.filterwarnings("ignore")
 
-# 引入项目根目录，以便导入 get_smpl_motion
-sys.path.append(os.getcwd())
-from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer # 导入人脸裁剪和九宫格构建模块
-
 os.environ['http_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['https_proxy'] = 'http://oversea-squid1.jp.txyun:11080'
 os.environ['no_proxy'] = 'localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com'
@@ -69,7 +74,8 @@ def parse_args():
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-2000.safetensors", help="Model checkpoint path") # 模型路径
+    # parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-4200.safetensors", help="Model checkpoint path") # 模型路径
+    parser.add_argument("--ckpt_path", type=str, default="", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
@@ -107,7 +113,7 @@ def get_all_audio_files(audio_dir):
                 audio_files.append(os.path.join(root, file))
     return sorted(audio_files)
 
-def load_prompts(image_path, fps, rank):
+def load_prompts(image_path, fps, rank): #todo
     base_path = image_path
     for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
         if image_path.endswith(ext):
@@ -302,7 +308,7 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, i
     elif args.height and args.width:
         input_image = ImageOps.fit(input_image, (args.width, args.height), Image.LANCZOS) # 兜底逻辑
         
-    input_audio, sample_rate = librosa.load(audio_path, sr=args.audio_sample_rate) # 保持原样读取
+    # input_audio, sample_rate = librosa.load(audio_path, sr=args.audio_sample_rate) # 保持原样读取
     
     video = pipe(
         prompt=prompt,
@@ -327,12 +333,15 @@ def save_inference_config(output_dir, args, rank):
         f.write(f"Data Paths:\n  image_list_path: {args.dataset_metadata_path}\n  audio_dir: {args.audio_dir}\n")
         f.write(f"Model:\n  ckpt_path: {args.ckpt_path}\n  model_id: {args.model_id}\n")
         f.write(f"Inference:\n  num_frames: {args.num_frames}\n  height: {args.height}\n  width: {args.width}\n  max_pixels: {args.max_pixels}\n")
-        f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n")
+        f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n") # todo 这三个参数完全没用上
+        f.write(f"Other:\n  seed: {args.seed}\n  fps: {args.fps}\n  quality: {args.quality}\n  littletestdataset: {args.littletestdataset}\n")
+        f.write(f"位置编码:0")
+
 
 def main():
     # 初始化逻辑
     args = parse_args()
-    args.enable_id_grid = True 
+    args.enable_id_grid = True #todo 验证不加ID的情况
     rank, world_size, local_rank = get_distributed_info(args)
     if not torch.cuda.is_available(): raise RuntimeError("CUDA is not available")
     num_gpus = torch.cuda.device_count()
@@ -346,7 +355,7 @@ def main():
     save_inference_config(output_dir, args, rank)
     
     # Load pipeline and external tools
-    pipe = load_pipeline(args, device)
+    pipe = load_pipeline(args, device) #todo 到底加载进去了吗
     if SmplInfer is not None:
         # 初始化外部的扣人脸/九宫格模块，设置 is_image=True 以适配推理单图/少数图场景
         smpl_infer = SmplInfer(smpl_checkpoints_path='/ytech_milm/liujiwen/kling_motion_service/smpl_all_checkpoints', is_image=True)
@@ -418,7 +427,7 @@ def main():
             if not os.path.exists(audio_path): continue
             
             # try:
-            if True:
+            if True: #todo 去掉
                 # 生成九宫格
                 id_grid = generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer)
                 if id_grid is not None:
@@ -458,12 +467,12 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        import debugpy
-        debugpy.listen(("0.0.0.0", 5678))
-        print("=" * 50)
-        print("Waiting for debugger to attach on port 5678...")
-        print("=" * 50)
-        debugpy.wait_for_client()  
-        print("Debugger attached! Continuing...")
+    # if os.environ.get("LOCAL_RANK", "0") == "0":
+    #     import debugpy
+    #     debugpy.listen(("0.0.0.0", 5678))
+    #     print("=" * 50)
+    #     print("Waiting for debugger to attach on port 5678...")
+    #     print("=" * 50)
+    #     debugpy.wait_for_client()  
+    #     print("Debugger attached! Continuing...")
     main()
