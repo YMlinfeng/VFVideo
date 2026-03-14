@@ -16,7 +16,7 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --num_epochs 10 \
   --trainable_models "dit" \
   --remove_prefix_in_ckpt "pipe.dit." \
-  --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0" \
+  --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_debug" \
   --extra_inputs "input_image" \
   --gradient_accumulation_steps 1 \
   --debug \
