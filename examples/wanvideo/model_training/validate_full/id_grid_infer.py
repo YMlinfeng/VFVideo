@@ -87,7 +87,7 @@ def parse_args():
     parser.add_argument("--quality", type=int, default=5, help="Video quality") # 质量
     parser.add_argument("--littletestdataset", action="store_true", help="Audio load mode") # 音频对齐模式
     parser.add_argument("--enable_id_grid", action="store_true", help="Enable ID Grid generation") # 开启九宫格
-    parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="ID Grid equivalent area") # 九宫格等效面积
+    parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="ID Grid equivalent area") # 九宫格等效面积 #todo 这个到底用了吗
     parser.add_argument("--id_grid_num_frames", type=int, default=1, help="Number of frames for ID Grid") # 九宫格帧数 (控制长度)
     parser.add_argument("--id_video_path", type=str, default=None, help="Optional reference ID video") # 支持传入视频扣ID
     parser.add_argument("--num_audios_per_image", type=int, default=1, help="Audios per inference") # 每个图片音频数
