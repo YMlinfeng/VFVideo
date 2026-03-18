@@ -172,7 +172,7 @@ class BasePipeline(torch.nn.Module):
 
     def generate_noise(self, shape, seed=None, rand_device="cpu", rand_torch_dtype=torch.float32, device=None, torch_dtype=None):
         # Initialize Gaussian noise
-        generator = None if seed is None else torch.Generator(rand_device).manual_seed(seed)
+        generator = None if seed is None else torch.Generator(rand_device).manual_seed(seed) #todo 最好不要这样写，让generator传入进来而不是在里面才初始化
         noise = torch.randn(shape, generator=generator, device=rand_device, dtype=rand_torch_dtype)
         noise = noise.to(dtype=torch_dtype or self.torch_dtype, device=device or self.device)
         return noise

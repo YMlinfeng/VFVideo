@@ -410,8 +410,9 @@ class WanVideoPipeline(BasePipeline):
         progress_bar_cmd=tqdm,
         output_type: Optional[Literal["quantized", "floatpoint"]] = "quantized",
         id_grid: Optional[torch.Tensor] = None, #type:ignore
+        **kwargs,
     ):
-        # Scheduler #todo 这里是干嘛的
+        # Scheduler #todo 这里是干嘛的：DDIM
         self.scheduler.set_timesteps(num_inference_steps, denoising_strength=denoising_strength, shift=sigma_shift)
         
         # Inputs
@@ -452,6 +453,17 @@ class WanVideoPipeline(BasePipeline):
         # Denoise
         self.load_models_to_device(self.in_iteration_models)
         models = {name: getattr(self, name) for name in self.in_iteration_models}
+        # 缓存原始的 negative context 和 id_grid_tokens，以便根据进度动态应用 CFG
+        orig_inputs_nega_context = inputs_nega.get("context")
+        orig_inputs_nega_id_grid_tokens = inputs_nega.get("id_grid_tokens")
+        
+        # 解析 CFG 控制参数 (用户可传 kwargs 控制，缺省则全程生效)
+        # 例如: id_cfg_start_step=10 表示前10步不加ID CFG
+        id_cfg_start_step = kwargs.get("id_cfg_start_step", 0)
+        id_cfg_end_step = kwargs.get("id_cfg_end_step", num_inference_steps)
+        text_cfg_start_step = kwargs.get("text_cfg_start_step", 0)
+        text_cfg_end_step = kwargs.get("text_cfg_end_step", num_inference_steps)
+
         for progress_id, timestep in enumerate(progress_bar_cmd(self.scheduler.timesteps)):
             # Switch DiT if necessary
             if timestep.item() < switch_DiT_boundary * 1000 and self.dit2 is not None and not models["dit"] is self.dit2:
@@ -461,6 +473,22 @@ class WanVideoPipeline(BasePipeline):
                 
             # Timestep
             timestep = timestep.unsqueeze(0).to(dtype=self.torch_dtype, device=self.device) #[1000.]
+
+            # 动态 CFG 控制
+            # 如果当前步数不在 ID CFG 生效范围内，用正向的 token 覆盖负向的 token
+            # 这样正负向的 ID 特征完全一样，相减为 0，ID CFG 失效
+            if orig_inputs_nega_id_grid_tokens is not None:
+                if id_cfg_start_step <= progress_id <= id_cfg_end_step:
+                    inputs_nega["id_grid_tokens"] = orig_inputs_nega_id_grid_tokens
+                else:
+                    inputs_nega["id_grid_tokens"] = inputs_posi.get("id_grid_tokens")
+            
+            # 文本 CFG 控制同理
+            if orig_inputs_nega_context is not None:
+                if text_cfg_start_step <= progress_id <= text_cfg_end_step:
+                    inputs_nega["context"] = orig_inputs_nega_context
+                else:
+                    inputs_nega["context"] = inputs_posi.get("context")
             
             # Inference
             noise_pred_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep) # torch.Size([1, 16, 15, H, W])
@@ -493,7 +521,7 @@ class WanVideoPipeline(BasePipeline):
         return video
 
 
-class WanVideoUnit_IDGridEmbedder(PipelineUnit):
+class WanVideoUnit_IDGridEmbeddertodo(PipelineUnit):
     """
     九宫格ID注入 Embedder。
     """
@@ -526,7 +554,79 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         # a = id_grid_latents; a = (a + 1.0) / 2.0; plt.imsave("output1.png", F.to_pil_image(a.float()))
         return {"id_grid_latents": id_grid_latents} # ([1, 16, 1, 66, 66] ) # todo 形状既没对上（没看到用“等效面积”的逻辑调整大小），又没看到和i2v中的i相似的mask逻辑
 
+class WanVideoUnit_IDGridEmbedder(PipelineUnit):
+    """
+    九宫格ID注入 Embedder，将预处理和 Token 化移到外部，同时支持 CFG。
+    """
+    def __init__(self):
+        super().__init__(
+            take_over=True,
+            onload_model_names=("vae", "dit")
+        )
 
+    def encode_and_patchify(self, pipe, id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride):
+        # 1. VAE Encode
+        id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
+        
+        # 2. 构造 Patch Embedding 输入 (对应 Wan I2V 的 36 通道结构: 16 noise + 4 mask + 16 cond)
+        b, c, t_g, h_g, w_g = id_grid_latents.shape
+        mask_grid = torch.ones(b, 4, t_g, h_g, w_g, device=pipe.device, dtype=pipe.torch_dtype)
+        
+        if id_grid_noise is None:
+            id_grid_noise = torch.zeros(b, 16, t_g, h_g, w_g, device=pipe.device, dtype=pipe.torch_dtype)
+        else:
+            id_grid_noise = id_grid_noise.to(dtype=pipe.torch_dtype, device=pipe.device)
+             
+        grid_input = torch.cat([id_grid_noise, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #todo 查concat的顺序
+        
+        # 3. Patchify
+        grid_tokens = pipe.dit.patch_embedding(grid_input)
+        grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c')
+        
+        # 4. 计算 RoPE Freqs
+        # ID 图拼在最前面。主视频从时间 0 开始。
+        # 所以 ID Grid 的时间应该是负数，紧贴在 0 之前。
+        pf, ph, pw = pipe.dit.patch_size
+        f_token, h_token, w_token = t_g // pf, h_g // ph, w_g // pw
+        time_offset = -f_token # 时间向前偏移 (负数)
+        
+        grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, pipe.dit.dim // pipe.dit.num_heads, pipe.device)
+        
+        return grid_tokens, grid_freqs
+
+    def process(self, pipe: WanVideoPipeline, inputs_shared, inputs_posi, inputs_nega):
+        id_grid = inputs_shared.get("id_grid")
+        if id_grid is None:
+            return inputs_shared, inputs_posi, inputs_nega
+            
+        if not torch.is_tensor(id_grid):
+            return inputs_shared, inputs_posi, inputs_nega
+            
+        if id_grid.ndim == 4:
+            id_grid = id_grid.unsqueeze(0)
+        id_grid = id_grid.to(device=pipe.device, dtype=pipe.torch_dtype)
+        
+        id_grid_noise = inputs_shared.get("id_grid_noise")
+        num_frames_main = inputs_shared.get("num_frames", 81)
+        tiled = inputs_shared.get("tiled", False)
+        tile_size = inputs_shared.get("tile_size")
+        tile_stride = inputs_shared.get("tile_stride")
+        
+        pipe.load_models_to_device(self.onload_model_names)
+        
+        # 提取真实特征 (Positive CFG)
+        grid_tokens_posi, grid_freqs = self.encode_and_patchify(pipe, id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride)
+        
+        # 提取全黑特征 (Negative CFG)
+        black_id_grid = torch.zeros_like(id_grid)
+        grid_tokens_nega, _ = self.encode_and_patchify(pipe, black_id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride)
+        
+        # 将 Token 分发到正负 CFG 字典中
+        inputs_posi["id_grid_tokens"] = grid_tokens_posi
+        inputs_nega["id_grid_tokens"] = grid_tokens_nega
+        inputs_shared["id_grid_freqs"] = grid_freqs
+        
+        return inputs_shared, inputs_posi, inputs_nega
 
 
 class WanVideoUnit_ShapeChecker(PipelineUnit):
@@ -542,7 +642,7 @@ class WanVideoUnit_ShapeChecker(PipelineUnit):
 
 
 
-class WanVideoUnit_NoiseInitializer(PipelineUnit):
+class WanVideoUnit_NoiseInitializertodo(PipelineUnit):
     def __init__(self):
         super().__init__(
             input_params=("height", "width", "num_frames", "seed", "rand_device", "vace_reference_image"),
@@ -560,6 +660,50 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
             noise = torch.concat((noise[:, :, -f:], noise[:, :, :-f]), dim=2)
         
         return {"noise": noise} # ([1, 16, 15, 80, 70]),([1, 16, 11, 46, 88])
+    
+class WanVideoUnit_NoiseInitializer(PipelineUnit):
+    def __init__(self):
+        super().__init__(
+            input_params=("height", "width", "num_frames", "seed", "rand_device", "vace_reference_image", "id_grid"),
+            output_params=("noise", "id_grid_noise")
+        )
+
+    def process(self, pipe: WanVideoPipeline, height, width, num_frames, seed, rand_device, vace_reference_image, id_grid=None):
+        import math
+        length_main = (num_frames - 1) // 4 + 1
+        if vace_reference_image is not None:
+            f_vace = len(vace_reference_image) if isinstance(vace_reference_image, list) else 1
+            length_main += f_vace
+            
+        shape_main = (1, pipe.vae.model.z_dim, length_main, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
+        num_elements_main = math.prod(shape_main)
+        
+        shape_grid = None
+        num_elements_grid = 0
+        if id_grid is not None:
+            if id_grid.ndim == 4:
+                id_grid = id_grid.unsqueeze(0)
+            b, c, t, h, w = id_grid.shape
+            # 对于 T=1，(1-1)//4+1 = 1。对于 T=41，(41-1)//4+1 = 11。
+            length_grid = (t - 1) // 4 + 1 if t > 1 else 1
+            shape_grid = (b, pipe.vae.model.z_dim, length_grid, h // pipe.vae.upsampling_factor, w // pipe.vae.upsampling_factor)
+            num_elements_grid = math.prod(shape_grid)
+            
+        # 一次性生成一大块连续噪声，确保同 Seed 下的稳定性
+        total_elements = num_elements_main + num_elements_grid
+        generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+        total_noise_1d = torch.randn((total_elements,), generator=generator, device=rand_device, dtype=torch.float32)
+        total_noise_1d = total_noise_1d.to(device=pipe.device, dtype=pipe.torch_dtype)        
+        noise = total_noise_1d[:num_elements_main].reshape(shape_main)
+        if shape_grid is not None:
+            id_grid_noise = total_noise_1d[num_elements_main:].reshape(shape_grid)
+        else:
+            id_grid_noise = None
+            
+        if vace_reference_image is not None:
+            noise = torch.concat((noise[:, :, -f_vace:], noise[:, :, :-f_vace]), dim=2)
+        
+        return {"noise": noise, "id_grid_noise": id_grid_noise}
     
 
 
@@ -666,7 +810,7 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
             resized_image = F.resize(input_image, (height, width)) 
             image = resized_image.unsqueeze(0).to(pipe.device)
         else:   
-            print(f"[InferBug] 输入图像被调整为 ({width}, {height}") 
+            if input_image.size != (width, height): print(f"[InferBug] 输入图像被调整为 ({width}, {height}") 
             image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
         msk = torch.ones(1, num_frames, height//8, width//8, device=pipe.device)
         msk[:, 1:] = 0
@@ -1397,10 +1541,10 @@ def model_fn_wan_video(
         t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
     context = dit.text_embedding(context) #(1, 512, 1536) 1,512,4096->5120
 
-    x = latents
+    x = latents #!不单独区分首帧,因为有mask
     
     if x.shape[0] != context.shape[0]:
-        x = torch.concat([x] * context.shape[0], dim=0)
+        x = torch.concat([x] * context.shape[0], dim=0) #todo 再确认一下time是怎么进来的
     if timestep.shape[0] != context.shape[0]:
         timestep = torch.concat([timestep] * context.shape[0], dim=0)
 
@@ -1437,52 +1581,65 @@ def model_fn_wan_video(
     ], dim=-1).reshape(f * h * w, 1, -1).to(x.device)
 
     # ========== 九宫格ID注入处理 ==========
-    if id_grid_latents is not None:
-        # id_grid_latents: (B, 16, T_g, H_g, W_g)
-        b, c, t_g, h_g, w_g = id_grid_latents.shape
-        
-        # 1. 构造 Patch Embedding 输入
-        # 我们将 id_grid 放在 "y" 的位置（条件），将 "x" 的位置（噪声）置零
-        # 结构: [zeros_x(16) | mask(4) | id_grid(16)]
-        
-        zeros_x = torch.zeros(b, 16, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # ([1, 16, 1, 66, 66])
-        mask_grid = torch.ones(b, 4, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
-        
-        id_grid_latents = id_grid_latents.to(dtype=x.dtype)
-        grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #todo 九宫格没算等效面积
-        
-        # 2. Patchify Grid
-        # 使用 dit 的 patch_embedding 层 # todo 是否要自己设计一个专门处理 ID Grid 的 patch embedding？因为它的输入结构和主视频不太一样了，输入通道为16而非36？
-        grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 66, 66])->1,5120,1,33,33 #todo 检查两个的patchify是否完全一样，尤其是stride和padding等细节
-        
-        # Flatten
-        grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c') # torch.Size([1, 1089, 5120])一帧的情况是990个token
-        
-        # 3. 计算 Grid Freqs (RoPE)
-        # 获取 patch 后的维度
-        pf, ph, pw = dit.patch_size
-        f_token = t_g // pf # 1
-        h_token = h_g // ph # 33
-        w_token = w_g // pw # 33
-        
-        # 构造负时间索引，使 Grid 位于主视频之前
-        # 主视频从 0 开始。Grid 从 -f_token 开始到 -1
-        # 这样 Grid 的位置编码就 "足够近" (0 vs -1, -2...)
-        time_offset = -f_token
-        time_offset = 0
-        #todo 对比上面和此处空间位置的位置编码，看看是否需要调整空间位置编码的起始索引，使其与 Grid 的位置更匹配
-        grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, dit.dim // dit.num_heads, x.device)
-        
-        # 4. 拼接到 x 和 freqs
-        # Grid 在时间上在前面，所以拼在前面
-        x = torch.cat([grid_tokens, x], dim=1)
-        freqs = torch.cat([grid_freqs, freqs], dim=0)
-        
-        # 记录 grid tokens 的长度，以便在最后剔除
-        grid_seq_len = grid_tokens.shape[1]
+    # 逻辑已移至 WanVideoUnit_IDGridEmbedder 中预先计算，这里直接拼接
+    id_grid_tokens = kwargs.get("id_grid_tokens", None)
+    if id_grid_tokens is not None:
+        id_grid_freqs = kwargs.get("id_grid_freqs", None)
+        # 将 ID Grid 拼接到最前面！
+        x = torch.cat([id_grid_tokens, x], dim=1)
+        freqs = torch.cat([id_grid_freqs, freqs], dim=0)
+        grid_seq_len = id_grid_tokens.shape[1]
     else:
         grid_seq_len = 0
     # ===================================
+
+    # # ========== 九宫格ID注入处理 ==========
+    # if id_grid_latents is not None:
+    #     # id_grid_latents: (B, 16, T_g, H_g, W_g)
+    #     b, c, t_g, h_g, w_g = id_grid_latents.shape
+        
+    #     # 1. 构造 Patch Embedding 输入
+    #     # 我们将 id_grid 放在 "y" 的位置（条件），将 "x" 的位置（噪声）置零
+    #     # 结构: [zeros_x(16) | mask(4) | id_grid(16)]
+        
+    #     zeros_x = torch.zeros(b, 16, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # ([1, 16, 1, 66, 66])
+    #     mask_grid = torch.ones(b, 4, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
+        
+    #     id_grid_latents = id_grid_latents.to(dtype=x.dtype)
+    #     grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #todo 九宫格没算等效面积
+        
+    #     # 2. Patchify Grid
+    #     # 使用 dit 的 patch_embedding 层 # todo 是否要自己设计一个专门处理 ID Grid 的 patch embedding？因为它的输入结构和主视频不太一样了，输入通道为16而非36？
+    #     grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 66, 66])->1,5120,1,33,33 #todo 检查两个的patchify是否完全一样，尤其是stride和padding等细节
+        
+    #     # Flatten
+    #     grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c') # torch.Size([1, 1089, 5120])一帧的情况是990个token
+        
+    #     # 3. 计算 Grid Freqs (RoPE)
+    #     # 获取 patch 后的维度
+    #     pf, ph, pw = dit.patch_size
+    #     f_token = t_g // pf # 1
+    #     h_token = h_g // ph # 33
+    #     w_token = w_g // pw # 33
+        
+    #     # 构造负时间索引，使 Grid 位于主视频之前
+    #     # 主视频从 0 开始。Grid 从 -f_token 开始到 -1
+    #     # 这样 Grid 的位置编码就 "足够近" (0 vs -1, -2...)
+    #     time_offset = -f_token
+    #     time_offset = 0
+    #     #todo 对比上面和此处空间位置的位置编码，看看是否需要调整空间位置编码的起始索引，使其与 Grid 的位置更匹配
+    #     grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, dit.dim // dit.num_heads, x.device)
+        
+    #     # 4. 拼接到 x 和 freqs
+    #     # Grid 在时间上在前面，所以拼在前面
+    #     x = torch.cat([grid_tokens, x], dim=1)
+    #     freqs = torch.cat([grid_freqs, freqs], dim=0)
+        
+    #     # 记录 grid tokens 的长度，以便在最后剔除
+    #     grid_seq_len = grid_tokens.shape[1]
+    # else:
+    #     grid_seq_len = 0
+    # # ===================================
 
     # VAP
     if vap is not None:
@@ -1569,7 +1726,7 @@ def model_fn_wan_video(
                         use_reentrant=False,
                     )
                 else:
-                    x = block(x, context, t_mod, freqs) #vace
+                    x = block(x, context, t_mod, freqs) #vace #! this path
             
             # VACE
             if vace_context is not None and block_id in vace.vace_layers_mapping:
@@ -1585,7 +1742,7 @@ def model_fn_wan_video(
         if tea_cache is not None:
             tea_cache.store(x)
             
-    x = dit.head(x, t)
+    x = dit.head(x, t) # 5120->64
     if use_unified_sequence_parallel:
         if dist.is_initialized() and dist.get_world_size() > 1:
             x = get_sp_group().all_gather(x, dim=1)

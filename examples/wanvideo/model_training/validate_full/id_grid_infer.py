@@ -95,6 +95,11 @@ def parse_args():
     parser.add_argument("--rank", type=int, default=0, help="Global rank") # Rank
     parser.add_argument("--world_size", type=int, default=1, help="World size") # 总卡数
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank") # 单机卡数
+    parser.add_argument("--id_cfg_start_step", type=int, default=0, help="Step to start ID CFG") # ID CFG 开始步数
+    parser.add_argument("--id_cfg_end_step", type=int, default=40, help="Step to end ID CFG") # ID CFG 结束步数
+    parser.add_argument("--text_cfg_start_step", type=int, default=0, help="Step to start Text CFG") # Text CFG 开始步数
+    parser.add_argument("--text_cfg_end_step", type=int, default=40, help="Step to end Text CFG") # Text CFG 结束步数
+    
     
     return parser.parse_args()
 
@@ -320,7 +325,11 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, i
         width=target_w if target_w else args.width,
         tiled=True,
         num_inference_steps=args.num_inference_steps,
-        id_grid=id_grid # 传入动态生成的 ID Grid
+        id_grid=id_grid, # 传入动态生成的 ID Grid
+        id_cfg_start_step=args.id_cfg_start_step,
+        id_cfg_end_step=args.id_cfg_end_step,
+        text_cfg_start_step=args.text_cfg_start_step,
+        text_cfg_end_step=args.text_cfg_end_step,
     )
     return video
 
@@ -334,6 +343,7 @@ def save_inference_config(output_dir, args, rank):
         f.write(f"Model:\n  ckpt_path: {args.ckpt_path}\n  model_id: {args.model_id}\n")
         f.write(f"Inference:\n  num_frames: {args.num_frames}\n  height: {args.height}\n  width: {args.width}\n  max_pixels: {args.max_pixels}\n")
         f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n") # todo 这三个参数完全没用上
+        f.write(f"CFG Control:\n  id_cfg_start: {args.id_cfg_start_step}\n  id_cfg_end: {args.id_cfg_end_step}\n  text_cfg_start: {args.text_cfg_start_step}\n  text_cfg_end: {args.text_cfg_end_step}\n")
         f.write(f"Other:\n  seed: {args.seed}\n  fps: {args.fps}\n  quality: {args.quality}\n  littletestdataset: {args.littletestdataset}\n")
         f.write(f"位置编码:0")
 
@@ -341,7 +351,7 @@ def save_inference_config(output_dir, args, rank):
 def main():
     # 初始化逻辑
     args = parse_args()
-    args.enable_id_grid = True #todo 验证不加ID的情况
+    args.enable_id_grid = True
     rank, world_size, local_rank = get_distributed_info(args)
     if not torch.cuda.is_available(): raise RuntimeError("CUDA is not available")
     num_gpus = torch.cuda.device_count()
@@ -427,7 +437,7 @@ def main():
             if not os.path.exists(audio_path): continue
             
             # try:
-            if True: #todo 去掉
+            if True: 
                 # 生成九宫格
                 id_grid = generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer)
                 if id_grid is not None:
