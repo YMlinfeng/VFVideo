@@ -589,6 +589,8 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         pf, ph, pw = pipe.dit.patch_size
         f_token, h_token, w_token = t_g // pf, h_g // ph, w_g // pw
         time_offset = -f_token # 时间向前偏移 (负数)
+        time_offset = 0
+        time_offset = -(num_frames_main // pipe.time_division_factor) # 直接把 ID Grid 的时间设置在主视频时间范围的前一个时间步上
         
         grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, pipe.dit.dim // pipe.dit.num_heads, pipe.device)
         
