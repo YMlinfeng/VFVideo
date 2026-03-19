@@ -564,7 +564,7 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
             onload_model_names=("vae", "dit")
         )
 
-    def encode_and_patchify(self, pipe, id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride):
+    def encode_and_patchify(self, pipe, id_grid, id_grid_noise, num_frames_main, h_main, w_main, tiled, tile_size, tile_stride):
         # 1. VAE Encode
         id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
         
@@ -587,14 +587,21 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         # ID 图拼在最前面。主视频从时间 0 开始。
         # 所以 ID Grid 的时间应该是负数，紧贴在 0 之前。
         pf, ph, pw = pipe.dit.patch_size
-        f_token, h_token, w_token = t_g // pf, h_g // ph, w_g // pw
+        f_token, h_token, w_token = t_g // pf, h_g // ph, w_g // pw # 1 33 33
+        # 计算主视频在 Latent 层的 Token 长度 (VAE压缩8倍 * Patch尺寸2 = 16)
+        h_main_token = h_main // 8 // ph
+        w_main_token = w_main // 8 // pw
+        h_offset = 0
+        w_offset = w_main_token
+        # h_offset = h_main_token // 2 - h_token // 2 # 垂直居中
+        # w_offset = w_main_token // 2 - w_token // 2 # 水平居中
         time_offset = -f_token # 时间向前偏移 (负数)
-        time_offset = 0
-        time_offset = -(num_frames_main // pipe.time_division_factor) # 直接把 ID Grid 的时间设置在主视频时间范围的前一个时间步上
+        # time_offset = 0
+        # time_offset = -(num_frames_main // pipe.time_division_factor) # 直接把 ID Grid 的时间设置在主视频时间范围的前一个时间步上
         
-        grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, pipe.dit.dim // pipe.dit.num_heads, pipe.device)
+        grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, h_offset, w_offset, pipe.dit.dim // pipe.dit.num_heads, pipe.device)
         
-        return grid_tokens, grid_freqs
+        return grid_tokens, grid_freqs # [1, 990, 5120], [990, 1, 64]
 
     def process(self, pipe: WanVideoPipeline, inputs_shared, inputs_posi, inputs_nega):
         id_grid = inputs_shared.get("id_grid")
@@ -610,6 +617,8 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         
         id_grid_noise = inputs_shared.get("id_grid_noise")
         num_frames_main = inputs_shared.get("num_frames", 81)
+        h_main = inputs_shared.get("height", 480)
+        w_main = inputs_shared.get("width", 832)
         tiled = inputs_shared.get("tiled", False)
         tile_size = inputs_shared.get("tile_size")
         tile_stride = inputs_shared.get("tile_stride")
@@ -617,11 +626,11 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         pipe.load_models_to_device(self.onload_model_names)
         
         # 提取真实特征 (Positive CFG)
-        grid_tokens_posi, grid_freqs = self.encode_and_patchify(pipe, id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride)
+        grid_tokens_posi, grid_freqs = self.encode_and_patchify(pipe, id_grid, id_grid_noise, num_frames_main, h_main, w_main, tiled, tile_size, tile_stride)
         
         # 提取全黑特征 (Negative CFG)
         black_id_grid = torch.zeros_like(id_grid)
-        grid_tokens_nega, _ = self.encode_and_patchify(pipe, black_id_grid, id_grid_noise, num_frames_main, tiled, tile_size, tile_stride)
+        grid_tokens_nega, _ = self.encode_and_patchify(pipe, black_id_grid, id_grid_noise, num_frames_main, h_main, w_main, tiled, tile_size, tile_stride)
         
         # 将 Token 分发到正负 CFG 字典中
         inputs_posi["id_grid_tokens"] = grid_tokens_posi
@@ -816,7 +825,7 @@ class WanVideoUnit_ImageEmbedderVAE(PipelineUnit):
             image = pipe.preprocess_image(input_image.resize((width, height))).to(pipe.device)
         msk = torch.ones(1, num_frames, height//8, width//8, device=pipe.device)
         msk[:, 1:] = 0
-        if end_image is not None: #todo 注意怎么处理end image
+        if end_image is not None:
             end_image = pipe.preprocess_image(end_image.resize((width, height))).to(pipe.device)
             vae_input = torch.concat([image.transpose(0,1), torch.zeros(3, num_frames-2, height, width).to(image.device), end_image.transpose(0,1)],dim=1)
             msk[:, -1:] = 1
@@ -1404,37 +1413,39 @@ class TemporalTiler_BCTHW:
 
 def get_1d_freqs(positions, dim, theta=10000.0, device=None):
     # RoPE 1D helper
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].double().to(device) / dim))
-    freqs = torch.outer(positions.to(device).float(), freqs)
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].double().to(device) / dim)) #生成转速[1.0,0.01,...] shape:[22](time)
+    freqs = torch.outer(positions.to(device).float(), freqs) # torch.outer 是外积。它把 positions [0, 10] 和 freqs [1.0, 0.01] 交叉相乘. 结果是一个矩阵，行数等于 positions 的长度，列数等于 freqs 的长度。每个元素 (i, j) 是 positions[i] * freqs[j]。所以 freqs 的 shape 从 [22] 变成了 [10, 22]，其中 10 是 positions 的长度。它算出了每个位置在每个维度上应该“旋转多少角度”。位置 0 的角度都是 0（不转）。位置 10 旋转角度很大（10 和 0.1）。
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs) # 形状不变，利用Euler公式，把刚才算出的“角度”变成了可以直接用的“旋转按钮”。AI 只要把自己的特征向量乘以这些复数，就像转动拨盘一样，把位置信息编码进去了。位置 0：cos(0) + i sin(0) = 1 + 0i，位置 10：cos(10) + i sin(10) 和 cos(0.1) + i sin(0.1)
     return freqs_cis
 
-def make_grid_freqs(f, h, w, time_offset, head_dim, device):
+def make_grid_freqs(f, h, w, time_offset, h_offset, w_offset, head_dim, device):
     # dim split: [d - 2*(d//3), d//3, d//3]
-    d_f = head_dim - 2 * (head_dim // 3)
-    d_h = head_dim // 3
-    d_w = head_dim // 3
+    d_f = head_dim - 2 * (head_dim // 3) #44
+    d_h = head_dim // 3 # 42
+    d_w = head_dim // 3 # 42
     
     # Time positions (negative for ID grid)
     pos_f = torch.arange(time_offset, time_offset + f, device=device) 
-    freqs_f = get_1d_freqs(pos_f, d_f, device=device) #(1,22)
+    freqs_f = get_1d_freqs(pos_f, d_f, device=device) #(1,22)长度是（len（position）,dim//2）
     
     # Space positions
-    pos_h = torch.arange(0, h, device=device)
+    # pos_h = torch.arange(0, h, device=device)
+    pos_h = torch.arange(h_offset, h_offset + h, device=device)
     freqs_h = get_1d_freqs(pos_h, d_h, device=device) #(30,21)
     
-    pos_w = torch.arange(0, w, device=device)
+    # pos_w = torch.arange(0, w, device=device)
+    pos_w = torch.arange(w_offset, w_offset + w, device=device)
     freqs_w = get_1d_freqs(pos_w, d_w, device=device) #(33,21)
     
     # Broadcasting to (f, h, w)
     # freqs_f: (f, D_f) -> (f, 1, 1, D_f) -> (f, h, w, D_f)
-    freqs_f = freqs_f.view(f, 1, 1, -1).expand(f, h, w, -1)
-    freqs_h = freqs_h.view(1, h, 1, -1).expand(f, h, w, -1)
-    freqs_w = freqs_w.view(1, 1, w, -1).expand(f, h, w, -1)
+    freqs_f = freqs_f.view(f, 1, 1, -1).expand(f, h, w, -1) #(1,33,33,22)
+    freqs_h = freqs_h.view(1, h, 1, -1).expand(f, h, w, -1) #(1,33,33,21)
+    freqs_w = freqs_w.view(1, 1, w, -1).expand(f, h, w, -1) #(1,33,33,21)
     
     # Concat
-    freqs = torch.cat([freqs_f, freqs_h, freqs_w], dim=-1) # (f, h, w, head_dim) (complex)
-    freqs = freqs.reshape(f * h * w, 1, -1)
+    freqs = torch.cat([freqs_f, freqs_h, freqs_w], dim=-1) # (f, h, w, head_dim) (complex) # #(1,33,33,64)
+    freqs = freqs.reshape(f * h * w, 1, -1) #(1089, 1, 64)
     return freqs
 
 def model_fn_wan_video(
@@ -1576,7 +1587,7 @@ def model_fn_wan_video(
         x = torch.concat([reference_latents, x], dim=1)
         f += 1
     
-    freqs = torch.cat([ #todo 再好好理解一下
+    freqs = torch.cat([
         dit.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
         dit.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
         dit.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
@@ -1588,8 +1599,8 @@ def model_fn_wan_video(
     if id_grid_tokens is not None:
         id_grid_freqs = kwargs.get("id_grid_freqs", None)
         # 将 ID Grid 拼接到最前面！
-        x = torch.cat([id_grid_tokens, x], dim=1)
-        freqs = torch.cat([id_grid_freqs, freqs], dim=0)
+        x = torch.cat([id_grid_tokens, x], dim=1) # (1,990,d=5120)cat(1,11132,64)
+        freqs = torch.cat([id_grid_freqs, freqs], dim=0) # (990,1,64)cat(11132,1,64)
         grid_seq_len = id_grid_tokens.shape[1]
     else:
         grid_seq_len = 0
@@ -1612,7 +1623,7 @@ def model_fn_wan_video(
         
     #     # 2. Patchify Grid
     #     # 使用 dit 的 patch_embedding 层 # todo 是否要自己设计一个专门处理 ID Grid 的 patch embedding？因为它的输入结构和主视频不太一样了，输入通道为16而非36？
-    #     grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 66, 66])->1,5120,1,33,33 #todo 检查两个的patchify是否完全一样，尤其是stride和padding等细节
+    #     grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 66, 66])->1,5120,1,33,33
         
     #     # Flatten
     #     grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c') # torch.Size([1, 1089, 5120])一帧的情况是990个token
@@ -1629,7 +1640,6 @@ def model_fn_wan_video(
     #     # 这样 Grid 的位置编码就 "足够近" (0 vs -1, -2...)
     #     time_offset = -f_token
     #     time_offset = 0
-    #     #todo 对比上面和此处空间位置的位置编码，看看是否需要调整空间位置编码的起始索引，使其与 Grid 的位置更匹配
     #     grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, dit.dim // dit.num_heads, x.device)
         
     #     # 4. 拼接到 x 和 freqs

@@ -270,6 +270,11 @@ if __name__ == "__main__":
             print("=" * 50)
             debugpy.wait_for_client()  
             print("Debugger attached! Continuing...")
+            from diffsynth.configs.model_configs import MODEL_CONFIGS
+            for config in MODEL_CONFIGS:
+                if config.get("model_hash") == "6bfcfb3b342cb286ce886889d519a77e":
+                    if "extra_kwargs" in config and "num_layers" in config["extra_kwargs"]:
+                        config["extra_kwargs"]["num_layers"] = 2
     print("start training")
     deepspeed_plugin = DeepSpeedPlugin(
         zero_stage=2,
