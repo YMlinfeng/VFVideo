@@ -109,6 +109,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
         id_grid_max_pixels=268800, # 九宫格等效面积 (等效面积模式)
         id_grid_aug_intensity=1.9,  # 数据增强强度
         id_grid_num_frames=1,     # 九宫格参考视频帧数
+        id_drop_rate=0.0,      # 九宫格随机丢弃率（用于 CFG）
         debug=False,           # 是否启用调试可视化
         debug_save_dir="./debug_vis",  # 调试输出目录
     ):
@@ -134,6 +135,8 @@ class UnifiedDataset(torch.utils.data.Dataset):
         self.id_grid_height = id_grid_height
         self.id_grid_width = id_grid_width
         self.id_grid_max_pixels = id_grid_max_pixels
+        self.id_grid_num_frames = id_grid_num_frames
+        self.id_drop_rate = id_drop_rate
         self.id_grid_loader = None
         if enable_id_grid:
             self.id_grid_loader = LoadIDGrid(
@@ -335,6 +338,8 @@ class UnifiedDataset(torch.utils.data.Dataset):
         if self.load_from_cache:
             return len(self.cached_data) * self.repeat
         else:
+            if hasattr(self, "use_dataframe") and self.use_dataframe:
+                return len(self.metadata_df) * self.repeat
             return len(self.data) * self.repeat
         
     def check_data_equal(self, data1, data2):

@@ -707,7 +707,12 @@ def launch_training_task(
                             optimizer.step()
                         
                         with timer.time_step("model_logger"):
-                            model_logger.on_step_end(accelerator, model, save_steps)
+                            current_lr = scheduler.get_last_lr()[0] if hasattr(scheduler, "get_last_lr") else 0.0
+                            model_logger.on_step_end(
+                                accelerator, model, save_steps,
+                                loss=loss.item() if hasattr(loss, "item") else None,
+                                lr=current_lr
+                            )
                         
                         with timer.time_step("scheduler_step"):
                             scheduler.step()
@@ -737,7 +742,12 @@ def launch_training_task(
                     loss = model(data) 
                     accelerator.backward(loss) # 计算 loss 对所有可训练参数的梯度,DL的核心——链式法则求导
                     optimizer.step() # 根据梯度更新模型权重, 新权重 = 旧权重 - 学习率 × 梯度
-                    model_logger.on_step_end(accelerator, model, save_steps)
+                    current_lr = scheduler.get_last_lr()[0] if hasattr(scheduler, "get_last_lr") else 0.0
+                    model_logger.on_step_end(
+                        accelerator, model, save_steps,
+                        loss=loss.item() if hasattr(loss, "item") else None,
+                        lr=current_lr
+                    )
                     scheduler.step() # 随着训练进行，调整学习率（通常是逐渐减小）
         accelerator.wait_for_everyone() # 确保所有进程完成
         model_logger.on_training_end(accelerator, model, save_steps)

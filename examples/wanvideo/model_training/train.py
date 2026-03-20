@@ -251,8 +251,14 @@ def wan_parser():
     parser.add_argument("--id_grid_width", type=int, default=480, help="Width of the ID grid output.")
     parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="Max pixels (equivalent area) for ID grid.")
     parser.add_argument("--id_grid_aug_intensity", type=float, default=1.9, help="Data augmentation intensity for ID grid.")
+    parser.add_argument("--id_drop_rate", type=float, default=0.1, help="Probability of dropping the ID grid for classifier-free guidance training.")
     parser.add_argument("--debug_save_dir", type=str, default="./debug_vis", help="Directory to save debug visualizations.")
     parser.add_argument("--id_grid_num_frames", type=int, default=1, help="Number of frames for the ID grid (should match the num_frames for video).")
+    # ========== SwanLab 监测系统参数 ==========
+    parser.add_argument("--use_swanlab", default=False, action="store_true", help="Enable SwanLab tracking.")
+    parser.add_argument("--swanlab_mode", type=str, default="local", choices=["cloud", "local"], help="SwanLab tracking mode. Use 'local' if cluster has no internet.")
+    parser.add_argument("--swanlab_project", type=str, default="wan_video_training", help="SwanLab project name.")
+    parser.add_argument("--swanlab_run_name", type=str, default=None, help="SwanLab run name.")
     return parser
 
 
@@ -321,6 +327,7 @@ if __name__ == "__main__":
         id_grid_width=args.id_grid_width,
         id_grid_max_pixels=args.id_grid_max_pixels,
         id_grid_aug_intensity=args.id_grid_aug_intensity,
+        id_drop_rate=args.id_drop_rate,
         id_grid_num_frames=args.id_grid_num_frames,
         debug=args.debug,
         debug_save_dir=args.debug_save_dir,
@@ -351,9 +358,18 @@ if __name__ == "__main__":
 
     accelerator.wait_for_everyone()
     model.debug_parameters()
+    
+    # 传递 args_dict 到 logger 以在 SwanLab 记录实验配置
+    args_dict = vars(args)
+    
     model_logger = ModelLogger(
         args.output_path,
         remove_prefix_in_ckpt=args.remove_prefix_in_ckpt,
+        use_swanlab=args.use_swanlab,
+        swanlab_mode=args.swanlab_mode,
+        swanlab_project=args.swanlab_project,
+        swanlab_run_name=args.swanlab_run_name,
+        args_dict=args_dict,
     )
     launcher_map = {
         "sft:data_process": launch_data_process_task,
