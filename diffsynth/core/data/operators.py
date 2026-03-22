@@ -740,6 +740,30 @@ class LoadIDGrid(DataProcessingOperator):
             from diffsynth.core.data.video_downsample import FaceGrid
             self._face_grid = FaceGrid()
         return self._face_grid
+
+    def _get_id_img_list(self, data: dict) -> list:
+        """从 data 字典中提取所有以 'id_img_list' 开头的字段，解析为有效路径列表"""
+        id_images = []
+        for key, val in data.items():
+            if str(key).startswith('id_img_list'):
+                if pd.isna(val) or val is None or val == "nan":
+                    continue
+                # 如果是字符串形式的列表 "['path1', 'path2']"，需要解析
+                if isinstance(val, str) and val.startswith('['):
+                    import ast
+                    try:
+                        parsed_list = ast.literal_eval(val)
+                        id_images.extend(parsed_list)
+                    except:
+                        pass
+                elif isinstance(val, list):
+                    id_images.extend(val)
+                elif isinstance(val, str) and os.path.exists(val):
+                    id_images.append(val)
+                    
+        # 过滤掉不存在的路径
+        valid_id_images = [p for p in id_images if isinstance(p, str) and os.path.exists(p)]
+        return valid_id_images
     
     def _get_video_path(self, data: dict) -> str:
         """从 data 字典中获取视频路径，支持多种字段名"""

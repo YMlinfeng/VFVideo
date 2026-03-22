@@ -202,6 +202,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
                 self.cached_data.append(subpath)
     
     def load_metadata(self, metadata_path):
+        self.use_dataframe = False
         if metadata_path is None:
             print("No metadata_path. Searching for cached data files.")
             self.search_for_cached_data_files(self.base_path)
@@ -217,11 +218,59 @@ class UnifiedDataset(torch.utils.data.Dataset):
                     metadata.append(json.loads(line.strip()))
             self.data = metadata
         else:
-            metadata = pandas.read_csv(metadata_path)
-            ##
-            metadata = metadata[metadata['video_length'] >= self.num_frames]
-            ##
-            self.data = [metadata.iloc[i].to_dict() for i in range(len(metadata))]
+            # 处理多个 CSV 混合 (用逗号分隔的路径)
+            paths = metadata_path.split(',')
+            all_metadata = []
+            for path in paths:
+                path = path.strip()
+                if not path: continue
+                print(f"[Dataset] Loading CSV: {path}")
+                try:
+                    metadata = pandas.read_csv(path)
+                    # === 兼容性修正逻辑 ===
+                    # 1. 统一 video_path
+                    if 'video_path' not in metadata.columns and 'ceph_path' in metadata.columns:
+                        metadata['video_path'] = metadata['ceph_path']
+                        
+                    # 2. 统一 caption (支持多种别名)
+                    caption_candidates = ['target_video_caption', 'video_path_caption', '027_unreal_sp_1080p_caption']
+                    for col in caption_candidates:
+                        if col in metadata.columns:
+                            metadata['target_video_caption'] = metadata[col]
+                            break
+                            
+                    # 3. 统一 video_length
+                    if 'video_length' not in metadata.columns:
+                        print(f"[Dataset Warning] {path} 缺少 video_length 列，将假设默认足够长 (9999)")
+                        metadata['video_length'] = 9999
+                    # 统一为 int 类型，避免因为 float 导致后续报错
+                    metadata['video_length'] = metadata['video_length'].fillna(9999).astype(int)
+                    # =====================
+                    
+                    # 过滤掉帧数不足的视频
+                    metadata = metadata[metadata['video_length'] >= self.num_frames]
+                    all_metadata.append(metadata)
+                except Exception as e:
+                    print(f"[Bug] Failed to load {path}: {e}")
+            
+            if all_metadata:
+                # 执行交叉交织（Interleave）合并
+                # 效果: CSV1_row1, CSV2_row1, ..., CSVN_row1, CSV1_row2, CSV2_row2...
+                for i, df in enumerate(all_metadata):
+                    df['_csv_idx'] = i
+                    df['_row_idx'] = np.arange(len(df))
+                    
+                self.metadata_df = pandas.concat(all_metadata, ignore_index=True)
+                # 优先按行号排序，行号相同则按 CSV 编号排序
+                self.metadata_df.sort_values(by=['_row_idx', '_csv_idx'], inplace=True)
+                self.metadata_df.drop(columns=['_csv_idx', '_row_idx'], inplace=True)
+                self.metadata_df.reset_index(drop=True, inplace=True)
+                
+                print(f"[Dataset] Total loaded rows from all CSVs (Interleaved): {len(self.metadata_df)}")
+            else:
+                self.metadata_df = pandas.DataFrame()
+                print("[Warning] No valid CSV data loaded!")
+            self.use_dataframe = True
 
     def __getitem__(self, data_id):
         # if self.load_from_cache:
@@ -230,10 +279,21 @@ class UnifiedDataset(torch.utils.data.Dataset):
         # else:
             # data (仓库):就是当前这一行 CSV 数据：{'video': 'A.mp4', 's2v_pose_video': 'B.mp4', 'input_audio': 'C.mp3', 'prompt': '...'}
             # self.data_file_keys (购物清单)，告诉程序"我这次训练只需要处理这几列文件：['video', 'input_audio', 's2v_pose_video']
-            data = self.data[data_id % len(self.data)].copy() # {'video': 'wans2v/s2v_video.mp4', 's2v_pose_video': 'wans2v/pose.mp4', 'input_audio': 'wans2v/sing.MP3', 'prompt': 'a person is singing'}
+            if hasattr(self, "use_dataframe") and self.use_dataframe:
+                data = self.metadata_df.iloc[data_id % len(self.metadata_df)].to_dict()
+            else:
+                data = self.data[data_id % len(self.data)].copy() # {'video': 'wans2v/s2v_video.mp4', 's2v_pose_video': 'wans2v/pose.mp4', 'input_audio': 'wans2v/sing.MP3', 'prompt': 'a person is singing'}
             # ================== 九宫格ID注入模块 ==================
             # 如果启用了九宫格ID注入，则加载九宫格参考视频
             if self.enable_id_grid and self.id_grid_loader is not None:
+                # 按照一定概率（drop_rate）不注入 ID (用于训练无条件生成能力，支持 CFG)
+                drop_rate = getattr(self, "id_drop_rate", 0.0)
+                if random.random() < drop_rate:
+                    # 设定为全零张量 (黑色)，和 CFG Negative 的行为一致
+                    id_grid_tensor = torch.zeros((3, self.id_grid_num_frames, self.id_grid_height, self.id_grid_width), dtype=torch.float32)
+                else:
+                    # 调用 LoadIDGrid 生成九宫格ID参考
+                    id_grid_tensor = self.id_grid_loader(data)
                 # 调用 LoadIDGrid 生成九宫格ID参考
                 id_grid_tensor = self.id_grid_loader(data)
                 # 将九宫格数据存入 data 字典
