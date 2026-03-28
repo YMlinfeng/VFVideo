@@ -241,6 +241,15 @@ class RoPE3D(BaseRoPE):
             num_grids = grid_rows * grid_cols  # 9
             total_ref_time = num_grids * frames_per_grid  # 18
             
+            # 计算目标生成视频的真实长度（总帧数 - 九宫格物理压缩占用的2帧）
+            target_frames = t - num_ref_frames
+            
+            # 计算时序插值比例 (Time Scale)
+            # 如果目标视频是 36 帧，而参考视频是 18 帧，则 scale = 2.0
+            # 这样就能把 18 帧的参考运镜，完美拉伸/对齐到 36 帧的目标时间线上
+            # 为了防止除以0或负数（虽然一般不会发生），加一个 max 保护
+            time_scale = max(target_frames / total_ref_time, 1e-5) if total_ref_time > 0 else 1.0
+            
             def split_indices(total, num_splits):
                 base = total // num_splits
                 remainder = total % num_splits
@@ -261,7 +270,10 @@ class RoPE3D(BaseRoPE):
                 for grid_row in range(grid_rows):
                     for grid_col in range(grid_cols):
                         grid_idx = grid_row * grid_cols + grid_col  # 行优先: 0-8
-                        real_time_pos = grid_idx * frames_per_grid + frame_idx - total_ref_time
+                        # 原始基础时间（如 -18 到 -1）
+                        base_time_pos = grid_idx * frames_per_grid + frame_idx - total_ref_time
+                        # 乘以缩放比例，实现时序插值拉伸！
+                        real_time_pos = base_time_pos * time_scale
                         h_start, h_end = h_splits[grid_row], h_splits[grid_row + 1]
                         w_start, w_end = w_splits[grid_col], w_splits[grid_col + 1]
                         time_positions[frame_idx, h_start:h_end, w_start:w_end] = real_time_pos
@@ -583,7 +595,104 @@ def main():
     print(f"  输出形状: {output.shape}")
     assert x.shape == output.shape
     assert not torch.allclose(x, output)
+
+
+
+
+def test_time_interpolation():
+    import torch
     
+    # 模拟基本参数
+    embed_dim = 512
+    num_ref_frames = 2     # 九宫格物理压缩占用的帧数
+    target_frames = 36     # 要生成的视频帧数 (比如 4 秒)
+    target_frames = 27     # 要生成的视频帧数 (比如 4 秒)
+    T = num_ref_frames + target_frames  # T = 38
+    H = 12
+    W = 15
+    patch_resolution = (T, H, W)
+    
+    print(f"=== 测试开始：验证运镜时间轴拉伸（插值）===")
+    print(f"总物理帧数 (T) = {T}")
+    print(f"其中包含：九宫格压缩图 {num_ref_frames} 帧，目标生成 {target_frames} 帧")
+    
+    rope = RoPE3D(
+        embed_dim=embed_dim,
+        max_patch_resolution=patch_resolution,
+        multi_id=True,
+    )
+    
+    new_freqs_cos, new_freqs_sin = rope.compute_position_embedding(patch_resolution)
+    print(f" 成功生成位置编码矩阵，Cos形状: {new_freqs_cos.shape}")
+    
+    grid_rows, grid_cols = 3, 3
+    frames_per_grid = 2
+    total_ref_time = 18 # 原始参考视频逻辑上是 18 帧
+    
+    time_scale = target_frames / total_ref_time # 36 / 18 = 2.0
+    print(f"(Time Scale) = {time_scale:.1f} = 目标生成帧数 / 参考视频帧数 = {target_frames} / {total_ref_time}")
+    
+    def split_indices(total, num_splits):
+        base = total // num_splits
+        remainder = total % num_splits
+        splits = [0]
+        for i in range(num_splits):
+            splits.append(splits[-1] + base + (1 if i < remainder else 0))
+        return splits
+    
+    h_splits = split_indices(H, grid_rows)
+    w_splits = split_indices(W, grid_cols)
+    
+    time_positions = torch.zeros(T, H, W)
+    for frame_idx in range(num_ref_frames):
+        for grid_row in range(grid_rows):
+            for grid_col in range(grid_cols):
+                grid_idx = grid_row * grid_cols + grid_col
+                # 未拉伸前的原始基础时间点：-18 到 -1
+                base_time_pos = grid_idx * frames_per_grid + frame_idx - total_ref_time
+                # 拉伸后的时间点
+                real_time_pos = base_time_pos * time_scale
+                
+                h_start, h_end = h_splits[grid_row], h_splits[grid_row + 1]
+                w_start, w_end = w_splits[grid_col], w_splits[grid_col + 1]
+                time_positions[frame_idx, h_start:h_end, w_start:w_end] = real_time_pos
+    
+    for gen_idx in range(num_ref_frames, T):
+        time_positions[gen_idx, :, :] = gen_idx - num_ref_frames
+
+    print(f"\n--- 物理第 0 帧 (参考压缩图 1) 时间坐标切片 ---")
+    for grid_row in range(3):
+        row_values = []
+        for grid_col in range(3):
+            h_idx = h_splits[grid_row]
+            w_idx = w_splits[grid_col]
+            row_values.append(float(time_positions[0, h_idx, w_idx].item()))
+        print(f"  第{grid_row}行: {row_values}")
+
+    print(f"\n--- 物理第 1 帧 (参考压缩图 2) 时间坐标切片 ---")
+    for grid_row in range(3):
+        row_values = []
+        for grid_col in range(3):
+            h_idx = h_splits[grid_row]
+            w_idx = w_splits[grid_col]
+            row_values.append(float(time_positions[1, h_idx, w_idx].item()))
+        print(f"  第{grid_row}行: {row_values}")
+        
+    print(f"\n--- 生成目标视频的开头几帧 ---")
+    print(f"生成视频第 0 帧 (物理总第2帧) 时间戳: {float(time_positions[2, 0, 0].item())}")
+    print(f"生成视频第 1 帧 (物理总第3帧) 时间戳: {float(time_positions[3, 0, 0].item())}")
+
+    #-----------------#
+    # 验证 forward 能否正常运行不报错
+    batch = 1
+    num_heads = 8
+    num_patches = T * H * W
+    torch.manual_seed(42)
+    x = torch.randn(batch, num_heads, num_patches, embed_dim)
+    output = rope.forward(x, patch_resolution)
+    print(f"\n 输入形状: {x.shape} -> 输出形状: {output.shape}")
+
 
 if __name__ == "__main__":
-    main()
+    test_time_interpolation()
+    # main()
