@@ -1,6 +1,3 @@
-
-#!/bin/bash
-
 cat >> ~/.tmux.conf << 'EOF'
 set -g mouse on
 set -g mode-keys vi
