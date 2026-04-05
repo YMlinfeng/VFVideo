@@ -765,6 +765,46 @@ class LoadIDGrid(DataProcessingOperator):
         valid_id_images = [p for p in id_images if isinstance(p, str) and os.path.exists(p)]
         return valid_id_images
     
+    @property
+    def smpl_infer(self):
+        """延迟初始化 SmplInfer 及所需的补丁，确保只初始化一次"""
+        if not hasattr(self, "_smpl_infer") or self._smpl_infer is None:
+            import inspect
+            import numpy as np
+            from collections import namedtuple
+            import sys
+            import os
+
+            if not hasattr(inspect, "getargspec"):
+                ArgSpec = namedtuple(
+                    "ArgSpec", ["args", "varargs", "keywords", "defaults"]
+                )
+
+                def getargspec(func):
+                    spec = inspect.getfullargspec(func)
+                    return ArgSpec(spec.args, spec.varargs, spec.varkw, spec.defaults)
+
+                inspect.getargspec = getargspec
+                inspect.ArgSpec = ArgSpec
+
+            if not hasattr(np, "bool"):
+                np.bool = bool
+
+            get_smpl_motion_path = os.path.abspath(
+                "/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"
+            )
+            if get_smpl_motion_path not in sys.path:
+                sys.path.append(get_smpl_motion_path)
+
+            from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer
+
+            self._smpl_infer = SmplInfer(
+                smpl_checkpoints_path="/ytech_milm/liujiwen/kling_motion_service/smpl_all_checkpoints",
+                is_image=True,
+            )
+
+        return self._smpl_infer
+
     def _get_video_path(self, data: dict) -> str:
         """从 data 字典中获取视频路径，支持多种字段名"""
         # 优先使用原始视频路径字段
@@ -895,9 +935,8 @@ class LoadIDGrid(DataProcessingOperator):
 
         # TODO: 我们需要初始化 get_smpl_motion 库的 SmplInfer (因为原代码用它来做九宫格)
         # 这里统一调用底层的 face_grid 或 smpl_infer.get_face_grid
-        # 我们这里复用你的 smpl_infer.get_face_grid 逻辑
+        # 我们这里复用 smpl_infer.get_face_grid 逻辑
         # 我们假设 self.face_grid 实际上就是封装了扣脸逻辑
-        # 修改为直接调用你项目中实现的 get_face_grid
         
         import sys
         sys.path.append(os.path.abspath("/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"))
@@ -935,7 +974,7 @@ class LoadIDGrid(DataProcessingOperator):
             return id_grid_tensor
             
         except Exception as e:
-            print(f"[LoadIDGrid] Error building ID grid: {e}")
+            print(f"[Bug todo ][LoadIDGrid] Error building ID grid: {e}")
             return torch.zeros((3, self.id_grid_num_frames, final_h, final_w))
         
         # 转换为 tensor: (T, H, W, 3) -> (3, T, H, W)

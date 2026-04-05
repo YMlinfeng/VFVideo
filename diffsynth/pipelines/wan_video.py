@@ -577,7 +577,7 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         else:
             id_grid_noise = id_grid_noise.to(dtype=pipe.torch_dtype, device=pipe.device)
              
-        grid_input = torch.cat([id_grid_noise, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #todo 查concat的顺序
+        grid_input = torch.cat([id_grid_noise, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #注意concat的顺序：nml
         
         # 3. Patchify
         grid_tokens = pipe.dit.patch_embedding(grid_input)
@@ -593,6 +593,7 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         w_main_token = w_main // 8 // pw
         h_offset = 0
         w_offset = w_main_token
+        w_offset = 0
         # h_offset = h_main_token // 2 - h_token // 2 # 垂直居中
         # w_offset = w_main_token // 2 - w_token // 2 # 水平居中
         time_offset = -f_token # 时间向前偏移 (负数)

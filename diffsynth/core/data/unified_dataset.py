@@ -233,7 +233,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
                         metadata['video_path'] = metadata['ceph_path']
                         
                     # 2. 统一 caption (支持多种别名)
-                    caption_candidates = ['target_video_caption', 'video_path_caption', '027_unreal_sp_1080p_caption']
+                    caption_candidates = ['target_video_caption', 'video_path_caption', '027_unreal_sp_1080p_caption', "ceph_path_caption"]
                     for col in caption_candidates:
                         if col in metadata.columns:
                             metadata['target_video_caption'] = metadata[col]
@@ -295,7 +295,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
                     # 调用 LoadIDGrid 生成九宫格ID参考
                     id_grid_tensor = self.id_grid_loader(data)
                 # 调用 LoadIDGrid 生成九宫格ID参考
-                id_grid_tensor = self.id_grid_loader(data)
+                # 111
                 # 将九宫格数据存入 data 字典
                 # id_grid_tensor 形状: (C, T, H, W)，值域 [-1, 1]
                 data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])->([3, 1, 480, 528]) 其中41和1是九宫格中每一个小格子的帧数，通过id_frames参数控制
