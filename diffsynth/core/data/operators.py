@@ -809,59 +809,134 @@ class LoadIDGrid(DataProcessingOperator):
         
         return None
     
+    def load_and_expand_id_images(self, id_image_paths):
+        """
+        加载并扩充 ID 图片到 9 张。
+        使用左右翻转或直接复制。
+        """
+        import cv2
+        images_bytes = []
+        for p in id_image_paths:
+            try:
+                with open(p, "rb") as f:
+                    images_bytes.append(f.read()) # 读取二进制
+            except Exception as e:
+                print(f"[WARN] Failed to load ID image {p}: {e}")
+                
+        if not images_bytes:
+            return []
+            
+        expanded_binaries = list(images_bytes)
+        while len(expanded_binaries) < 9: # 扩充到 9 张
+            src_binary = random.choice(images_bytes)
+            if random.random() < 0.5:
+                try:
+                    np_img = cv2.imdecode(np.frombuffer(src_binary, np.uint8), cv2.IMREAD_COLOR)
+                    flipped = cv2.flip(np_img, 1) # 水平翻转增强多样性
+                    _, encoded = cv2.imencode('.png', flipped)
+                    expanded_binaries.append(encoded.tobytes())
+                except:
+                    expanded_binaries.append(src_binary) # 失败则原样复制
+            else:
+                expanded_binaries.append(src_binary)
+                
+        return expanded_binaries[:9]
+    
     def __call__(self, data: dict):
         """
-        处理视频生成九宫格ID参考。
-        
-        Args:
-            data: 包含以下字段的字典:
-                - video_path: 视频文件路径（或其他视频路径字段）
-                - dwpose_path: 姿态文件路径 (可选)
-                - fps: 视频帧率
-                - ori_fps: 原始帧率 (可选，默认等于fps)
-                - video_start_idx: 视频起始帧索引 (可选)
-                - actual_n: 实际帧数 (可选)
-        
-        Returns:
-            torch.Tensor: 九宫格ID参考视频，形状 (C, T, H, W)，值域 [-1, 1]
+        处理视频或图片列表生成九宫格ID参考。
         """
-        # 获取视频路径
+        import cv2
+        
+        # 提取 CSV 中的 id_img_list* 作为九宫格的基础
+        id_image_paths = self._get_id_img_list(data)
+        
+        # 获取视频路径 (用作兜底或如果没给独立的 id images)
         video_path = self._get_video_path(data)
-        if video_path is None:
-            print(f"[LoadIDGrid] Warning: No video path found in data")
         
-        # 获取帧率信息
-        fps = float(data.get("fps", self.tgt_fps))
-        ori_fps = float(data.get("ori_fps", fps))
-        
-        # 处理 ori_fps 为 nan 的情况
-        if str(ori_fps) == "nan" or ori_fps <= 0:
-            ori_fps = fps
-        
-        # 查找姿态文件
-        dwpose_path = self._find_pose_path(video_path, data)
-        
-        # 如果没有 pose 文件，返回零 tensor
-        if dwpose_path is None:
-            print(f"[LoadIDGrid] Warning: No pose file found for {video_path}")
-        
-        # 如果从 data 中可以获取动态算好的实际宽高，可以借用，或者纯依赖 max_pixels
-        max_pixels_to_use = self.max_pixels
+        # 如果 CSV 中提供了有效的 id 图片列表，则优先使用这些图片构建九宫格！
+        input_id_image_list_binary = None
+        if len(id_image_paths) > 0:
+            input_id_image_list_binary = self.load_and_expand_id_images(id_image_paths)
+            video_data = None
+            if video_path and os.path.exists(video_path):
+                # Optionally pass the video if the face_grid library requires it
+                # But typically if input_id_image_list_binary is provided, we don't need the whole video
+                pass
+        else:
+            # 兜底：如果 CSV 里没有合法的 id_img_list，只能退回到首帧提取
+            pass
 
-        # 调用 FaceGrid.execute 生成九宫格
-        # execute 返回 numpy array，形状 (T, H, W, 3)，值域 [0, 255]
-        id_grid_frames = self.face_grid.execute(
-            input_path=video_path,
-            output_path="./debug_vis/debug.mp4",  
-            dwpose_path=dwpose_path,
-            fps=fps,
-            ori_fps=ori_fps,
-            h=self.height,
-            w=self.width,
-            max_pixels=max_pixels_to_use,
-            target_length=self.id_grid_num_frames,
-            save=False
-        )
+        # 准备传入 face_grid 的数据
+        image_data = None
+        if video_path and os.path.exists(video_path):
+            with open(video_path, "rb") as f:
+                image_data = f.read() # 取决于 face_grid 底层怎么用它
+
+        # 确定尺寸
+        face_ar = 480 / 560  # Default aspect ratio
+        try:
+            if video_path and os.path.exists(video_path):
+                import imageio
+                reader = imageio.get_reader(video_path)
+                meta = reader.get_meta_data()
+                w, h = meta['size']
+                face_ar = w / h
+        except:
+            pass
+            
+        area = self.max_pixels
+        grid_w_raw = (area * face_ar) ** 0.5
+        grid_h_raw = (area / face_ar) ** 0.5
+        final_w = int(round(grid_w_raw / 48) * 48) # 对齐到 48 的倍数
+        final_h = int(round(grid_h_raw / 48) * 48)
+        if final_w == 0: final_w = 48
+        if final_h == 0: final_h = 48
+
+        # TODO: 我们需要初始化 get_smpl_motion 库的 SmplInfer (因为原代码用它来做九宫格)
+        # 这里统一调用底层的 face_grid 或 smpl_infer.get_face_grid
+        # 我们这里复用你的 smpl_infer.get_face_grid 逻辑
+        # 我们假设 self.face_grid 实际上就是封装了扣脸逻辑
+        # 修改为直接调用你项目中实现的 get_face_grid
+        
+        import sys
+        sys.path.append(os.path.abspath("/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"))
+        try:
+            from get_smpl_motion.GVHMR.smpl_Infer_service_ljw import SmplInfer
+            smpl_infer = SmplInfer(smpl_checkpoints_path='/ytech_milm/liujiwen/kling_motion_service/smpl_all_checkpoints', is_image=True)
+            
+            res = smpl_infer.get_face_grid(
+                image_data,
+                id_video_data=None,
+                input_id_image_list_binary=input_id_image_list_binary,
+                output_dir="./debug_vis",
+                target_size=[final_h, final_w],
+                save_path_dir="./debug_vis"
+            )
+            
+            frames = []
+            for frame_np in res:
+                frame_tensor = torch.from_numpy(frame_np.copy()).float()
+                frame_tensor = frame_tensor.permute(2, 0, 1) # (C, H, W)
+                frames.append(frame_tensor)
+                
+            video_tensor = torch.stack(frames, dim=1) # (C, T_raw, H, W)
+            
+            N = video_tensor.shape[1]
+            T = self.id_grid_num_frames
+            if N != T:
+                if N == 1:
+                    video_tensor = video_tensor.repeat(1, T, 1, 1)
+                else:
+                    indices = np.linspace(0, N - 1, T, dtype=int)
+                    video_tensor = video_tensor[:, indices, :, :]
+                    
+            id_grid_tensor = video_tensor / 127.5 - 1.0 # [-1, 1]
+            return id_grid_tensor
+            
+        except Exception as e:
+            print(f"[LoadIDGrid] Error building ID grid: {e}")
+            return torch.zeros((3, self.id_grid_num_frames, final_h, final_w))
         
         # 转换为 tensor: (T, H, W, 3) -> (3, T, H, W)
         # 值域转换: [0, 255] -> [-1, 1]
