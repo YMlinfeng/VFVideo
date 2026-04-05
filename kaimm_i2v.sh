@@ -60,13 +60,13 @@ mpirun --allow-run-as-root -np $np \
       --max_pixels 268800 \
       --num_frames 49 \
       --dataset_repeat 1 \
-      --model_id_with_origin_paths "Wan-AI/Wan2.1-I2V-14B-720P:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.1-I2V-14B-720P:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.1-I2V-14B-720P:Wan2.1_VAE.pth,Wan-AI/Wan2.1-I2V-14B-720P:models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth" \
+      --model_paths '[["/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00001-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00002-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00003-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00004-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00005-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00006-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00007-of-00007.safetensors"], "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/Wan2.1_VAE.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_clip_open-clip-xlm-roberta-large-vit-huge-14.safetensors"]' \
       --audio_processor_path "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.2-S2V-14B/wav2vec2-large-xlsr-53-english" \
       --learning_rate 1e-5 \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0" \
+      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0" \
       --extra_inputs "input_image" \
       --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \
@@ -77,7 +77,7 @@ mpirun --allow-run-as-root -np $np \
       --use_swanlab \
       --swanlab_mode "local" \
       --swanlab_project "wan_video_id_grid_training" \
-      --swanlab_run_name "multi_node_full_data" \
+      --swanlab_run_name "full_data" \
     2>&1 | tee logs/wan_train_$(date +%Y.%m.%d_%H:%M:%S).log
 
 # --trainable_models "dit.audio_injector" \
