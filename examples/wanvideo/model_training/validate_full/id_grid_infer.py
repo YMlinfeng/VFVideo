@@ -95,13 +95,13 @@ def parse_args():
     parser.add_argument("--rank", type=int, default=0, help="Global rank") # Rank
     parser.add_argument("--world_size", type=int, default=1, help="World size") # 总卡数
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank") # 单机卡数
-    parser.add_argument("--id_cfg_start_step", type=int, default=30, help="Step to start ID CFG") # ID CFG 开始步数
+    parser.add_argument("--id_cfg_start_step", type=int, default=20, help="Step to start ID CFG") # ID CFG 开始步数
     parser.add_argument("--id_cfg_end_step", type=int, default=40, help="Step to end ID CFG") # ID CFG 结束步数
     parser.add_argument("--text_cfg_start_step", type=int, default=0, help="Step to start Text CFG") # Text CFG 开始步数
     parser.add_argument("--text_cfg_end_step", type=int, default=40, help="Step to end Text CFG") # Text CFG 结束步数
-    parser.add_argument("--id_inject_strategy", type=str, default="first_frame", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
-    parser.add_argument("--id_inject_start_step", type=int, default=10, help="Step to start injecting target ID") 
-    parser.add_argument("--id_inject_end_step", type=int, default=40, help="Step to end injecting target ID")
+    parser.add_argument("--id_inject_strategy", type=str, default="black", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
+    parser.add_argument("--id_inject_start_step", type=int, default=5, help="Step to start injecting target ID") 
+    parser.add_argument("--id_inject_end_step", type=int, default=30, help="Step to end injecting target ID")
     
     
     return parser.parse_args()
