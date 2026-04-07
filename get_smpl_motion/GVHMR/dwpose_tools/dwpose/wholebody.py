@@ -20,11 +20,16 @@ from mmdet.apis import inference_detector, init_detector
 import onnxruntime as ort
 
 class Wholebody:
+    # def __init__(self, det_config=None, det_ckpt=None, 
+    #              pose_config=None, pose_ckpt=None,
+    #             det_onnx=None, pose_onnx=None, \
+    #             det_trt=None, pose_trt=None, \
+    #             device="cpu", type='pth', cuda_stream=None):
     def __init__(self, det_config=None, det_ckpt=None, 
                  pose_config=None, pose_ckpt=None,
                 det_onnx=None, pose_onnx=None, \
                 det_trt=None, pose_trt=None, \
-                device="cpu", type='pth', cuda_stream=torch.cuda.current_stream()):
+                device="cpu", type='pth', cuda_stream=torch.cuda.current_stream()): #todo
         
         #对应的score * 10
         self.is_rtmw = True        

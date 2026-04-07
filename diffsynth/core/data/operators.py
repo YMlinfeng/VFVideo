@@ -258,7 +258,8 @@ class LoadVideo(DataProcessingOperator):
         return duration
 
     def __call__(self, input_video_pth: str):
-        if True:
+        # if True: #todo
+        try:
             videoreader = VideoReader(input_video_pth)
             duration_ffprobe = self.run_ffprobe_subprocess(input_video_pth)
             fps = float(videoreader.get_avg_fps())
@@ -362,9 +363,9 @@ class LoadVideo(DataProcessingOperator):
             }
             # return pil_frames, input_img_list, start_idx, actual_n
 
-        # except Exception as e:
-        #     print(f"Error loading video {input_video_pth}: {str(e)}")
-        #     return {}
+        except Exception as e:
+            print(f"[Bug todo LoadVideo] Error loading video {input_video_pth}: {str(e)}")
+            return {}
 
 class SequencialProcess(DataProcessingOperator):
     '''
@@ -589,21 +590,21 @@ class LoadAudio(DataProcessingOperator):
                 audio = audio_resample[audio_start_idx:audio_end_idx+1]
                 audio = torch.from_numpy(audio).float().unsqueeze(0)
             except Exception as e:
-                print(f"Load audio from npy fails: {path}. Error: {e}")
+                print(f"[Bug todo LoadAudio] Load audio from npy fails: {path}. Error: {e}")
                 audio = torch.zeros((1, int(sample_rate/tgt_fps*int(video_end_idx-video_start_idx)))).float()
 
         elif path is not None and path.split('.')[-1].lower() in {"mp3", "wav", "flac", "ogg", "m4a"}:
             try:
                 audio = self.load_audio_from_audiofile(path, video_start_idx, video_end_idx, tgt_fps, sample_rate)
             except Exception as e:
-                print(f"Load audio file fails: {e}")
+                print(f"[Bug todo LoadAudio] Load audio file fails: {e}")
                 audio = torch.zeros((1, int(sample_rate/tgt_fps*int(video_end_idx-video_start_idx)))).float()
         
         elif path is not None:
             try:
                 audio = self.load_audio_from_video(path, video_start_idx, video_end_idx, tgt_fps, sample_rate)
             except Exception as e:
-                print(f"Load audio from video fails: {path}. Error: {e}")
+                print(f"[Bug todo LoadAudio] Load audio from video fails: {path}. Error: {e}")
                 audio = torch.zeros((1, int(sample_rate/tgt_fps*int(video_end_idx-video_start_idx)))).float()
         else:
             audio = torch.zeros((1, int(sample_rate/tgt_fps*int(video_end_idx-video_start_idx)))).float()
@@ -873,7 +874,7 @@ class LoadIDGrid(DataProcessingOperator):
                 with open(p, "rb") as f:
                     images_bytes.append(f.read()) # 读取二进制
             except Exception as e:
-                print(f"[WARN] Failed to load ID image {p}: {e}")
+                print(f"[Bug todo LoadIDGrid] Failed to load ID image {p}: {e}")
                 
         if not images_bytes:
             return []
@@ -913,36 +914,43 @@ class LoadIDGrid(DataProcessingOperator):
         
         # 查找姿态文件
         dwpose_path = self._find_pose_path(video_path, data)
-        
+        fallback_h = self.height if self.height is not None else 560
+        fallback_w = self.width if self.width is not None else 480
+
         # 如果没有 pose 文件，返回零 tensor
         if dwpose_path is None:
-            print(f"[Bug todo LoadIDGrid] Warning: No pose file found for {video_path}")
+            print(f"[Bug todo LoadIDGrid] Warning: No pose file found for {video_path}. Treating as drop.")
+            return torch.zeros((3, self.id_grid_num_frames, fallback_h, fallback_w), dtype=torch.float32)
         
         # 如果从 data 中可以获取动态算好的实际宽高，可以借用，或者纯依赖 max_pixels
         max_pixels_to_use = self.max_pixels
 
-        # 调用 FaceGrid.execute 生成九宫格
-        # execute 返回 numpy array，形状 (T, H, W, 3)，值域 [0, 255]
-        id_grid_frames = self.face_grid.execute(
-            input_path=video_path,
-            output_path="./debug_vis/debug.mp4",  
-            dwpose_path=dwpose_path,
-            fps=fps,
-            ori_fps=ori_fps,
-            h=self.height,
-            w=self.width,
-            max_pixels=max_pixels_to_use,
-            target_length=self.id_grid_num_frames,
-            save=False
-        )
-        
-        # 转换为 tensor: (T, H, W, 3) -> (3, T, H, W)
-        # 值域转换: [0, 255] -> [-1, 1]
-        id_grid_tensor = torch.from_numpy(id_grid_frames.copy()).float()
-        id_grid_tensor = id_grid_tensor.permute(3, 0, 1, 2)  # (C, T, H, W)
-        id_grid_tensor = id_grid_tensor / 127.5 - 1.0  # 归一化到 [-1, 1]
-        
-        return id_grid_tensor
+        try:
+            # 调用 FaceGrid.execute 生成九宫格
+            # execute 返回 numpy array，形状 (T, H, W, 3)，值域 [0, 255]
+            id_grid_frames = self.face_grid.execute(
+                input_path=video_path,
+                output_path="./debug_vis/debug.mp4",  
+                dwpose_path=dwpose_path,
+                fps=fps,
+                ori_fps=ori_fps,
+                h=self.height,
+                w=self.width,
+                max_pixels=max_pixels_to_use,
+                target_length=self.id_grid_num_frames,
+                save=False
+            )
+            
+            # 转换为 tensor: (T, H, W, 3) -> (3, T, H, W)
+            # 值域转换: [0, 255] -> [-1, 1]
+            id_grid_tensor = torch.from_numpy(id_grid_frames.copy()).float()
+            id_grid_tensor = id_grid_tensor.permute(3, 0, 1, 2)  # (C, T, H, W)
+            id_grid_tensor = id_grid_tensor / 127.5 - 1.0  # 归一化到 [-1, 1]
+            
+            return id_grid_tensor
+        except Exception as e:
+            print(f"[Bug todo LoadIDGrid] Error processing {video_path}: {e}. Treating as drop.")
+            return torch.zeros((3, self.id_grid_num_frames, fallback_h, fallback_w), dtype=torch.float32)
 
 
 class DebugVisualizer:
@@ -1003,7 +1011,7 @@ class DebugVisualizer:
             print(f"[DebugVis] Saved video: {save_path}")
             
         except Exception as e:
-            print(f"[DebugVis] Failed to save video {name}: {e}")
+            print(f"[Bug todo DebugVisualizer] Failed to save video {name}: {e}")
     
     def save_image(self, tensor, name, data_id=0):
         """
@@ -1044,7 +1052,7 @@ class DebugVisualizer:
             print(f"[DebugVis] Saved image: {save_path}")
             
         except Exception as e:
-            print(f"[DebugVis] Failed to save image {name}: {e}")
+            print(f"[Bug todo DebugVisualizer] Failed to save image {name}: {e}")
     
     def save_grid_comparison(self, id_grid, first_frame, name, data_id=0):
         """
@@ -1102,4 +1110,4 @@ class DebugVisualizer:
             print(f"[DebugVis] Saved comparison: {save_path}")
             
         except Exception as e:
-            print(f"[DebugVis] Failed to save comparison {name}: {e}")
+            print(f"[Bug todo DebugVisualizer] Failed to save comparison {name}: {e}")

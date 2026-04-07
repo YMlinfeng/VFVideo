@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # export PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH"
-#todo：修改保存逻辑，把九宫格和原始id参考都保存到推理结果文件夹中
+# todo 关了人脸貌似也会进检测
 import os
 import sys
 sys.path.append(os.getcwd())
@@ -333,6 +333,82 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, i
     )
     return video
 
+def concat_visualizations(video_frames, id_image_paths, id_grid_tensor):
+    import numpy as np
+    from PIL import Image
+    
+    # 1. Load ID images
+    id_images = []
+    if id_image_paths:
+        for p in id_image_paths:
+            try:
+                img = Image.open(p).convert("RGB")
+                id_images.append(img)
+            except:
+                pass
+                
+    if len(id_images) == 0:
+        id_concat_img = Image.new("RGB", (1, 1), (0, 0, 0))
+    else:
+        # Concatenate horizontally
+        w_id = sum(img.width for img in id_images)
+        h_id = max(img.height for img in id_images)
+        id_concat_img = Image.new("RGB", (w_id, h_id), (0, 0, 0))
+        x_offset = 0
+        for img in id_images:
+            id_concat_img.paste(img, (x_offset, 0))
+            x_offset += img.width
+
+    # 2. Process ID Grid tensor -> frames
+    grid_frames = []
+    if id_grid_tensor is not None:
+        grid_np = id_grid_tensor.detach().cpu().numpy()
+        grid_np = np.transpose(grid_np, (1, 2, 3, 0)) # (T, H, W, 3)
+        grid_np = (grid_np + 1.0) * 127.5
+        grid_np = np.clip(grid_np, 0, 255).astype(np.uint8)
+        for i in range(grid_np.shape[0]):
+            grid_frames.append(Image.fromarray(grid_np[i]))
+    else:
+        grid_frames = [Image.new("RGB", (1, 1), (0, 0, 0))]
+
+    # 3. Create concatenated frames
+    num_frames = len(video_frames)
+    new_frames = []
+    
+    for i in range(num_frames):
+        # Handle video frames which can be PIL Image or numpy array
+        vf = video_frames[i]
+        if isinstance(vf, np.ndarray):
+            vf = Image.fromarray(vf)
+            
+        gf = grid_frames[i if i < len(grid_frames) else -1]
+        
+        # canvas size
+        left_w = max(vf.width, id_concat_img.width)
+        left_h = vf.height + id_concat_img.height
+        
+        right_w = gf.width
+        right_h = gf.height
+        
+        canvas_w = left_w + right_w
+        canvas_h = max(left_h, right_h)
+        
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
+        
+        # Paste video frame
+        canvas.paste(vf, (0, 0))
+        
+        # Paste ID images below video
+        canvas.paste(id_concat_img, (0, vf.height))
+        
+        # Paste Grid frame on the right
+        canvas.paste(gf, (left_w, 0))
+        
+        new_frames.append(np.array(canvas))
+        
+    return new_frames
+
+
 def save_inference_config(output_dir, args, rank):
     if rank != 0: return
     config_path = os.path.join(output_dir, "inference_config.txt")
@@ -460,6 +536,9 @@ def main():
                 # 推理
                 video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w)
                 
+                #concat
+                video = concat_visualizations(video, id_image_paths, id_grid)
+
                 # 保存
                 video_name = generate_video_name(image_path, audio_path)
                 video_save_path = os.path.join(output_dir, video_name)
@@ -477,12 +556,12 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    # if os.environ.get("LOCAL_RANK", "0") == "0":
-    #     import debugpy
-    #     debugpy.listen(("0.0.0.0", 5678))
-    #     print("=" * 50)
-    #     print("Waiting for debugger to attach on port 5678...")
-    #     print("=" * 50)
-    #     debugpy.wait_for_client()  
-    #     print("Debugger attached! Continuing...")
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("=" * 50)
+        print("Waiting for debugger to attach on port 5678...")
+        print("=" * 50)
+        debugpy.wait_for_client()  
+        print("Debugger attached! Continuing...")
     main()

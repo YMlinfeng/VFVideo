@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile

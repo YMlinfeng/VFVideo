@@ -121,7 +121,12 @@ class DWposeDetector:
             det_config=None, det_ckpt=None, \
             det_onnx=None, pose_onnx=None, \
             det_trt=None, pose_trt=None, \
-            device='cpu', type='pt', cuda_stream=torch.cuda.current_stream()):
+            device='cpu', type='pt', cuda_stream=torch.cuda.current_stream()): #todo
+    # def __init__(self, pose_config, pose_ckpt, \
+    #         det_config=None, det_ckpt=None, \
+    #         det_onnx=None, pose_onnx=None, \
+    #         det_trt=None, pose_trt=None, \
+    #         device='cpu', type='pt', cuda_stream=None):
 
 
         self.pose_estimation = Wholebody(det_config, det_ckpt, pose_config, pose_ckpt, \

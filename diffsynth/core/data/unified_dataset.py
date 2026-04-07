@@ -279,6 +279,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
         # else:
             # data (仓库):就是当前这一行 CSV 数据：{'video': 'A.mp4', 's2v_pose_video': 'B.mp4', 'input_audio': 'C.mp3', 'prompt': '...'}
             # self.data_file_keys (购物清单)，告诉程序"我这次训练只需要处理这几列文件：['video', 'input_audio', 's2v_pose_video']
+        try:    
             if hasattr(self, "use_dataframe") and self.use_dataframe:
                 data = self.metadata_df.iloc[data_id % len(self.metadata_df)].to_dict()
             else:
@@ -392,6 +393,9 @@ class UnifiedDataset(torch.utils.data.Dataset):
             # # ===================================================
             
             return data
+        except Exception as e:
+            print(f"[Bug todo Dataset] Error processing data_id {data_id}: {e}. Retrying with another sample.")
+            return self.__getitem__(random.randint(0, len(self) - 1))
 
 
     def __len__(self):
