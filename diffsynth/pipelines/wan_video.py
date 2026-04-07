@@ -446,6 +446,7 @@ class WanVideoPipeline(BasePipeline):
             "animate_pose_video": animate_pose_video, "animate_face_video": animate_face_video, "animate_inpaint_video": animate_inpaint_video, "animate_mask_video": animate_mask_video,
             "vap_video": vap_video, 
             "id_grid": id_grid,
+            "id_grid_alt": kwargs.get("id_grid_alt", None),
         }
         for unit in self.units:
             inputs_shared, inputs_posi, inputs_nega = self.unit_runner(unit, self, inputs_shared, inputs_posi, inputs_nega)
@@ -463,6 +464,11 @@ class WanVideoPipeline(BasePipeline):
         id_cfg_end_step = kwargs.get("id_cfg_end_step", num_inference_steps)
         text_cfg_start_step = kwargs.get("text_cfg_start_step", 0)
         text_cfg_end_step = kwargs.get("text_cfg_end_step", num_inference_steps)
+        # 解析 ID 注入策略
+        orig_inputs_posi_id_grid_tokens = inputs_posi.get("id_grid_tokens")
+        id_inject_strategy = kwargs.get("id_inject_strategy", "normal") # normal, first_frame, black, none
+        id_inject_start_step = kwargs.get("id_inject_start_step", 0)
+        id_inject_end_step = kwargs.get("id_inject_end_step", num_inference_steps)
 
         for progress_id, timestep in enumerate(progress_bar_cmd(self.scheduler.timesteps)):
             # Switch DiT if necessary
@@ -482,6 +488,21 @@ class WanVideoPipeline(BasePipeline):
                     inputs_nega["id_grid_tokens"] = orig_inputs_nega_id_grid_tokens
                 else:
                     inputs_nega["id_grid_tokens"] = inputs_posi.get("id_grid_tokens")
+            
+            # ID 注入策略控制 (正向分支替换)
+            if orig_inputs_posi_id_grid_tokens is not None:
+                if id_inject_start_step <= progress_id <= id_inject_end_step:
+                    # 在指定范围内，正常注入目标 ID Grid
+                    inputs_posi["id_grid_tokens"] = orig_inputs_posi_id_grid_tokens
+                else:
+                    # 在指定范围外，不注入目标 ID Grid，根据策略进行替换
+                    if id_inject_strategy == "first_frame":
+                        inputs_posi["id_grid_tokens"] = inputs_shared.get("id_grid_tokens_alt", orig_inputs_posi_id_grid_tokens)
+                    elif id_inject_strategy in ["black", "none"]:
+                        # "black" 和 "none" 等效于注入全黑图，维持 sequence_length 不变
+                        inputs_posi["id_grid_tokens"] = orig_inputs_nega_id_grid_tokens
+                    else:
+                        inputs_posi["id_grid_tokens"] = orig_inputs_posi_id_grid_tokens
             
             # 文本 CFG 控制同理
             if orig_inputs_nega_context is not None:
@@ -633,6 +654,15 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         black_id_grid = torch.zeros_like(id_grid)
         grid_tokens_nega, _ = self.encode_and_patchify(pipe, black_id_grid, id_grid_noise, num_frames_main, h_main, w_main, tiled, tile_size, tile_stride)
         
+        # 提取替代特征 (Alternative Strategy)
+        id_grid_alt = inputs_shared.get("id_grid_alt")
+        if id_grid_alt is not None:
+            if id_grid_alt.ndim == 4:
+                id_grid_alt = id_grid_alt.unsqueeze(0)
+            id_grid_alt = id_grid_alt.to(device=pipe.device, dtype=pipe.torch_dtype)
+            grid_tokens_alt, _ = self.encode_and_patchify(pipe, id_grid_alt, id_grid_noise, num_frames_main, h_main, w_main, tiled, tile_size, tile_stride)
+            inputs_shared["id_grid_tokens_alt"] = grid_tokens_alt
+            
         # 将 Token 分发到正负 CFG 字典中
         inputs_posi["id_grid_tokens"] = grid_tokens_posi
         inputs_nega["id_grid_tokens"] = grid_tokens_nega

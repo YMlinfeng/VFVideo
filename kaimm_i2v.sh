@@ -19,6 +19,8 @@ export ACCELERATE_CONFIG_FILE="/m2v_intern/mengzijie/DiffSynth-Studio/examples/w
 export DEEPSPEED_FORCE_MULTI_NODE=1
 export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
+export MODELSCOPE_HTTP_TIMEOUT=300
+export MODELSCOPE_MAX_RETRIES=10
 # export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 cat $ACCELERATE_CONFIG_FILE
 

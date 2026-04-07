@@ -116,7 +116,7 @@ PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 
 
-======================== 5. 执行 mpirun A800 ========================
+# ======================== 5. 执行 mpirun A800 ========================
 mpirun --allow-run-as-root -np $np \
     -mca plm_rsh_args "-p ${Port}" \
     -hostfile $hostfile \

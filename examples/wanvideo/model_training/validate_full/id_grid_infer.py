@@ -81,7 +81,7 @@ def parse_args():
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
     parser.add_argument("--width", type=int, default=None, help="Fixed width, None for equivalent area") # 固定宽
     parser.add_argument("--max_pixels", type=int, default=268800, help="Equivalent area max pixels") # 等效面积
-    parser.add_argument("--num_inference_steps", type=int, default=40, help="Denoising steps") # 推理步数
+    parser.add_argument("--num_inference_steps", type=int, default=40, help="Denoising steps") # 推理步数 #todo
     parser.add_argument("--seed", type=int, default=42, help="Random seed") # 随机种子
     parser.add_argument("--fps", type=int, default=15, help="Video FPS") # 帧率
     parser.add_argument("--quality", type=int, default=5, help="Video quality") # 质量
@@ -95,10 +95,13 @@ def parse_args():
     parser.add_argument("--rank", type=int, default=0, help="Global rank") # Rank
     parser.add_argument("--world_size", type=int, default=1, help="World size") # 总卡数
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank") # 单机卡数
-    parser.add_argument("--id_cfg_start_step", type=int, default=0, help="Step to start ID CFG") # ID CFG 开始步数
+    parser.add_argument("--id_cfg_start_step", type=int, default=30, help="Step to start ID CFG") # ID CFG 开始步数
     parser.add_argument("--id_cfg_end_step", type=int, default=40, help="Step to end ID CFG") # ID CFG 结束步数
     parser.add_argument("--text_cfg_start_step", type=int, default=0, help="Step to start Text CFG") # Text CFG 开始步数
     parser.add_argument("--text_cfg_end_step", type=int, default=40, help="Step to end Text CFG") # Text CFG 结束步数
+    parser.add_argument("--id_inject_strategy", type=str, default="first_frame", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
+    parser.add_argument("--id_inject_start_step", type=int, default=10, help="Step to start injecting target ID") 
+    parser.add_argument("--id_inject_end_step", type=int, default=40, help="Step to end injecting target ID")
     
     
     return parser.parse_args()
@@ -233,7 +236,7 @@ def load_and_expand_id_images(id_image_paths):
             
     return expanded_binaries[:9] # 确保只返回 9 张
 
-def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer):
+def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer, force_first_frame=False):
     """
     调用 SmplInfer 扣人脸并生成九宫格。
     """
@@ -246,7 +249,9 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer):
     id_video_data = None
     input_id_image_list_binary = None
 
-    if args.id_video_path and os.path.exists(args.id_video_path):
+    if force_first_frame:
+        input_id_image_list_binary = load_and_expand_id_images([image_path])
+    elif args.id_video_path and os.path.exists(args.id_video_path):
         with open(args.id_video_path, "rb") as f:
             id_video_data = f.read() # 模式A: 用户传入参考视频提取人脸
     elif id_image_paths:
@@ -306,7 +311,7 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer):
     video_tensor = video_tensor / 127.5 - 1.0 # 像素值归一化至 [-1, 1]
     return video_tensor
 
-def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w):
+def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w, id_grid_alt=None):
     input_image = Image.open(image_path).convert("RGB")
     if target_h is not None and target_w is not None:
         input_image = ImageOps.fit(input_image, (target_w, target_h), Image.LANCZOS) # 按计算好的等效面积目标宽高缩放
@@ -326,6 +331,10 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, i
         tiled=True,
         num_inference_steps=args.num_inference_steps,
         id_grid=id_grid, # 传入动态生成的 ID Grid
+        id_grid_alt=id_grid_alt, # 传入替代策略用的九宫格 (首帧图等)
+        id_inject_strategy=args.id_inject_strategy,
+        id_inject_start_step=args.id_inject_start_step,
+        id_inject_end_step=args.id_inject_end_step,
         id_cfg_start_step=args.id_cfg_start_step,
         id_cfg_end_step=args.id_cfg_end_step,
         text_cfg_start_step=args.text_cfg_start_step,
@@ -337,12 +346,26 @@ def concat_visualizations(video_frames, id_image_paths, id_grid_tensor):
     import numpy as np
     from PIL import Image
     
-    # 1. Load ID images
+    if len(video_frames) == 0:
+        return video_frames
+        
+    # Peek at the first video frame to get dimensions
+    first_vf = video_frames[0]
+    if isinstance(first_vf, np.ndarray):
+        first_vf = Image.fromarray(first_vf)
+    vid_w, vid_h = first_vf.width, first_vf.height
+    
+    # 1. Load and resize ID images (each is ~1/3 of main video width)
+    target_id_w = max(1, vid_w // 3)
     id_images = []
     if id_image_paths:
         for p in id_image_paths:
             try:
                 img = Image.open(p).convert("RGB")
+                # Resize proportionally
+                ratio = target_id_w / img.width
+                new_h = max(1, int(img.height * ratio))
+                img = img.resize((target_id_w, new_h), Image.LANCZOS)
                 id_images.append(img)
             except:
                 pass
@@ -383,26 +406,28 @@ def concat_visualizations(video_frames, id_image_paths, id_grid_tensor):
             
         gf = grid_frames[i if i < len(grid_frames) else -1]
         
-        # canvas size
-        left_w = max(vf.width, id_concat_img.width)
-        left_h = vf.height + id_concat_img.height
+        # Row 1 dimensions
+        row1_w = vf.width + gf.width
+        row1_h = max(vf.height, gf.height)
         
-        right_w = gf.width
-        right_h = gf.height
+        # Row 2 dimensions
+        row2_w = id_concat_img.width
+        row2_h = id_concat_img.height
         
-        canvas_w = left_w + right_w
-        canvas_h = max(left_h, right_h)
+        # Canvas dimensions
+        canvas_w = max(row1_w, row2_w)
+        canvas_h = row1_h + row2_h
         
         canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
         
-        # Paste video frame
+        # Paste video frame (top left)
         canvas.paste(vf, (0, 0))
         
-        # Paste ID images below video
-        canvas.paste(id_concat_img, (0, vf.height))
+        # Paste Grid frame on the right of video, tightly attached
+        canvas.paste(gf, (vf.width, 0))
         
-        # Paste Grid frame on the right
-        canvas.paste(gf, (left_w, 0))
+        # Paste ID images below Row 1
+        canvas.paste(id_concat_img, (0, row1_h))
         
         new_frames.append(np.array(canvas))
         
@@ -418,10 +443,11 @@ def save_inference_config(output_dir, args, rank):
         f.write(f"Data Paths:\n  image_list_path: {args.dataset_metadata_path}\n  audio_dir: {args.audio_dir}\n")
         f.write(f"Model:\n  ckpt_path: {args.ckpt_path}\n  model_id: {args.model_id}\n")
         f.write(f"Inference:\n  num_frames: {args.num_frames}\n  height: {args.height}\n  width: {args.width}\n  max_pixels: {args.max_pixels}\n")
-        f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n") # todo 这三个参数完全没用上
+        f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n")
+        f.write(f"ID Injection Control:\n  id_inject_strategy: {args.id_inject_strategy}\n  id_inject_start_step: {args.id_inject_start_step}\n  id_inject_end_step: {args.id_inject_end_step}\n")
         f.write(f"CFG Control:\n  id_cfg_start: {args.id_cfg_start_step}\n  id_cfg_end: {args.id_cfg_end_step}\n  text_cfg_start: {args.text_cfg_start_step}\n  text_cfg_end: {args.text_cfg_end_step}\n")
         f.write(f"Other:\n  seed: {args.seed}\n  fps: {args.fps}\n  quality: {args.quality}\n  littletestdataset: {args.littletestdataset}\n")
-        f.write(f"位置编码:0")
+        f.write(f"位置编码:-1") #todo
 
 
 def main():
@@ -519,6 +545,13 @@ def main():
                 if id_grid is not None:
                     id_grid = id_grid.to(device)
 
+                # 生成替代的 九宫格 (用于首帧策略)
+                id_grid_alt = None
+                if args.id_inject_strategy == "first_frame":
+                    id_grid_alt = generate_id_grid_with_smpl(image_path, [image_path], args, smpl_infer, force_first_frame=True)
+                    if id_grid_alt is not None:
+                        id_grid_alt = id_grid_alt.to(device)
+
                 # 计算等效面积目标尺寸
                 target_h, target_w = args.height, args.width
                 if target_h is None or target_w is None:
@@ -534,7 +567,7 @@ def main():
                     target_w = target_w // 16 * 16
 
                 # 推理
-                video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w)
+                video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w, id_grid_alt=id_grid_alt)
                 
                 #concat
                 video = concat_visualizations(video, id_image_paths, id_grid)
@@ -556,12 +589,12 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        import debugpy
-        debugpy.listen(("0.0.0.0", 5678))
-        print("=" * 50)
-        print("Waiting for debugger to attach on port 5678...")
-        print("=" * 50)
-        debugpy.wait_for_client()  
-        print("Debugger attached! Continuing...")
+    # if os.environ.get("LOCAL_RANK", "0") == "0":
+    #     import debugpy
+    #     debugpy.listen(("0.0.0.0", 5678))
+    #     print("=" * 50)
+    #     print("Waiting for debugger to attach on port 5678...")
+    #     print("=" * 50)
+    #     debugpy.wait_for_client()  
+    #     print("Debugger attached! Continuing...")
     main()
