@@ -43,7 +43,7 @@ OUTPUT_BASE_DIR="output_id_grid"
 # 模型参数
 # 修改为训练好的 Checkpoint 路径
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-3800.safetensors" 
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-1000.safetensors" 
 # ENABLE_ID_GRID=false
 ENABLE_ID_GRID=true
 
