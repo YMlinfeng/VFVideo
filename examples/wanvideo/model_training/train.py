@@ -195,7 +195,6 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs_posi = {"prompt": data["target_video_caption"]}
         inputs_nega = {}
         inputs_shared = {
-            # 修改点：映射 video
             "input_video": data["video_path"], #fp32
             "id_grid": data.get("id_grid"), # 九宫格ID注入 vae压完之后：[1, 16, 11, 70, 60]
             # "height": data["video_path"][0].size[1],
