@@ -192,13 +192,11 @@ class WanTrainingModule(DiffusionTrainingModule):
     
     def get_pipeline_inputs(self, data):
         # 在每次训练迭代前被调用，负责把 Dataset 读出来的原始字典，转换成模型 forward 接受的参数
-        inputs_posi = {"prompt": data["target_video_caption"]}
+        inputs_posi = {"prompt": data.get("caption", data.get("target_video_caption"))}
         inputs_nega = {}
         inputs_shared = {
             "input_video": data["video_path"], #fp32
             "id_grid": data.get("id_grid"), # 九宫格ID注入 vae压完之后：[1, 16, 11, 70, 60]
-            # "height": data["video_path"][0].size[1],
-            # "width": data["video_path"][0].size[0],
             "height": data["video_path"][0].shape[-2] if isinstance(data["video_path"][0], torch.Tensor) else data["video_path"][0].size[1],
             "width": data["video_path"][0].shape[-1] if isinstance(data["video_path"][0], torch.Tensor) else data["video_path"][0].size[0],
             "num_frames": len(data["video_path"][0]) if isinstance(data["video_path"][0], torch.Tensor) else len(data["video_path"]),
@@ -224,7 +222,6 @@ class WanTrainingModule(DiffusionTrainingModule):
         
         for unit in self.pipe.units:
             inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
-        # 根据任务类型计算损失
         loss = self.task_to_loss[self.task](self.pipe, *inputs)
 
         # 调试: 检查 loss 是否有 grad_fn

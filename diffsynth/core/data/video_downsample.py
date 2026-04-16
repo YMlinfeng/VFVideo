@@ -134,6 +134,9 @@ class FaceGrid:
                 'smooth': 0,           # 磨皮强度 (0=不做, 1-3=轻中重)
                 'blemish_list': [],         # 痘痘/痣列表
                 'wrinkle_list': [],       # 皱纹参数
+                'top_blocks': [],         # 顶部色块
+                'bottom_blocks': [],      # 底部边缘色块
+                'bottom_random_blocks': [], # 底部随机深色色块
             }
 
 
@@ -216,6 +219,31 @@ class FaceGrid:
         else:
             smooth_level = 0
         
+        # === 矩形色块数据增强 ===
+        top_blocks = []
+        if random.uniform(0, 1) < 0.3:
+            color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+            top_blocks = [
+                {'pos': 'top_left', 'color': color, 'w_ratio': random.uniform(0.1, 0.4)},
+                {'pos': 'top_right', 'color': color, 'w_ratio': random.uniform(0.1, 0.4)}
+            ]
+            
+        bottom_blocks = []
+        if random.uniform(0, 1) < 0.3:
+            color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+            bottom_blocks = [
+                {'pos': 'bottom_left', 'color': color, 'w_ratio': random.uniform(0.1, 0.4)},
+                {'pos': 'bottom_right', 'color': color, 'w_ratio': random.uniform(0.1, 0.4)}
+            ]
+            
+        bottom_random_blocks = []
+        if random.uniform(0, 1) < 0.3:
+            # 黑色或相近的深色
+            color = (random.randint(0, 40), random.randint(0, 40), random.randint(0, 40))
+            bottom_random_blocks = [
+                {'pos': 'bottom_random', 'color': color, 'w_ratio': random.uniform(0.1, 0.4), 'x_offset': random.uniform(0.0, 0.6)}
+            ]
+        
         return {
             'b': brightness_delta,
             'c': contrast_factor,
@@ -225,7 +253,11 @@ class FaceGrid:
             'blemish_list': blemish_list,
             'wrinkle_list': wrinkle_list,
             'smooth': smooth_level,
+            'top_blocks': top_blocks,
+            'bottom_blocks': bottom_blocks,
+            'bottom_random_blocks': bottom_random_blocks,
         }
+    
     def _apply_smooth(self, img, level):
         """
         快速磨皮效果
@@ -361,7 +393,60 @@ class FaceGrid:
         img = (mask * img + (1-mask) * img_ori).astype(np.uint8)
 
         return img
-    
+
+    def _apply_color_blocks(self, img, params):
+        """
+        添加矩形色块数据增强
+        """
+        img_h, img_w = img.shape[:2]
+        
+        blocks_list = params.get('top_blocks', []) + params.get('bottom_blocks', []) + params.get('bottom_random_blocks', [])
+        
+        for block in blocks_list:
+            pos = block['pos']
+            color = block['color']
+            w_ratio = block['w_ratio']
+            
+            # 限制最大面积
+            if pos == 'bottom_random':
+                max_area = img_h * img_w * 0.01  # 底部随机色块最大 1%
+            else:
+                max_area = img_h * img_w * 0.04  # 角落色块最大 4%
+                
+            w = max(1, int(img_w * w_ratio))
+            
+            # 根据面积限制计算高
+            h_max = max(1, int(max_area / w))
+            # 同样做一个合理的高宽比限制，避免过于细长
+            h = min(int(img_h * 0.4), h_max)
+            if h < 1:
+                continue
+                
+            x1, y1, x2, y2 = 0, 0, w, h
+            if pos == 'top_left':
+                pass # 默认 0, 0
+            elif pos == 'top_right':
+                x1, y1 = img_w - w, 0
+                x2, y2 = img_w, h
+            elif pos == 'bottom_left':
+                x1, y1 = 0, img_h - h
+                x2, y2 = w, img_h
+            elif pos == 'bottom_right':
+                x1, y1 = img_w - w, img_h - h
+                x2, y2 = img_w, img_h
+            elif pos == 'bottom_random':
+                x1 = int(img_w * block['x_offset'])
+                y1 = img_h - h
+                x2 = min(img_w, x1 + w)
+                y2 = img_h
+                w = x2 - x1 # 如果靠右越界会被截断
+                if w < 1:
+                    continue
+            
+            img[y1:y2, x1:x2] = color
+            
+        return img
+
     def apply_stable_augmentation(self, img, params, lms_i_new=None, frame_idx=0):
         """
         使用预先计算好的参数对图片进行增强。
@@ -417,143 +502,12 @@ class FaceGrid:
             img[:,:,0] = img[:,:,0]*0
             img[:,:,1] = img[:,:,1]*0
             img[:,:,2] = img[:,:,2]*0
+        
+        img = self._apply_color_blocks(img, params)
 
         return img
 
 
-
-    # def _apply_wrinkle(self, img_ori, wrinkle_list, lms_i_new):
-    #     """
-    #     添加皱纹纹理
-    #     返回一个 mask，表示皱纹的强度（0-1）
-    #     """
-    #     h, w = img_ori.shape[:2]
-        
-    #     if not wrinkle_list:
-    #         return np.zeros((h, w, 3), dtype="float32")
-        
-    #     # 最终的皱纹mask
-    #     img0 = np.zeros((h, w, 3), dtype="float32")
-        
-    #     # 加载并预处理皱纹纹理图
-    #     wrinkle_mask = self.wrinkle_mask.copy()
-    #     # wrinkle_mask = wrinkle_mask / wrinkle_mask.max()  # 归一化到 0-1
-    #     wrinkle_mask = cv2.resize(wrinkle_mask, (w, h), interpolation=cv2.INTER_LINEAR)
-        
-    #     # kernel = np.ones((3, 3), np.uint8)
-    #     # wrinkle_mask = cv2.dilate(wrinkle_mask, kernel, iterations=1)
-        
-    #     # 平铺3x3，确保偏移采样时不越界
-    #     wrinkle_mask = np.tile(wrinkle_mask, (3, 3, 1))
-        
-    #     fw = np.max(lms_i_new[:, 0]) - np.min(lms_i_new[:, 0])
-    #     fh = np.max(lms_i_new[:, 1]) - np.min(lms_i_new[:, 1])
-        
-    #     for wrinkle in wrinkle_list:
-    #         # 计算皱纹中心位置
-    #         cx = int(wrinkle['rel_x'] * fw + lms_i_new[30, 0])
-    #         cy = int(wrinkle['rel_y'] * fh + lms_i_new[30, 1])
-            
-    #         # 计算在平铺纹理中的采样偏移
-    #         Cx = int(-cx + 2 * w + wrinkle["shift"] * w)
-    #         Cy = int(-cy + 2 * h + wrinkle["shift"] * h)
-            
-    #         blur_k = wrinkle['blur_k']
-    #         radius = wrinkle['radius']
-            
-    #         # 边界检查
-    #         if cx < radius or cx > w - radius or cy < radius or cy > h - radius:
-    #             continue
-            
-    #         # 检查采样索引是否有效
-    #         y_start, y_end = Cy - h // 2, Cy + h - (h // 2)
-    #         x_start, x_end = Cx - w // 2, Cx + w - (w // 2)
-            
-    #         if y_start < 0 or x_start < 0 or y_end > wrinkle_mask.shape[0] or x_end > wrinkle_mask.shape[1]:
-    #             continue
-            
-    #         # 从平铺纹理中采样当前区域
-    #         wrinkle_mask_i = wrinkle_mask[y_start:y_end, x_start:x_end].copy()
-            
-    #         angle = wrinkle.get('angle', (cx * 7 + cy * 13) % 360)  # 固定但看起来随机
-    #         center = (w // 2, h // 2)
-    #         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-    #         wrinkle_mask_i = cv2.warpAffine(wrinkle_mask_i, rotation_matrix, (w, h),
-    #                                         borderMode=cv2.BORDER_WRAP)
-
-    #         # wrinkle_mask_i = cv2.GaussianBlur(wrinkle_mask_i, (blur_k, blur_k), 0)
-    #         # wrinkle_mask_i = wrinkle_mask_i - low_freq  # 高频部分
-    #         # wrinkle_mask_i = np.clip(wrinkle_mask_i, 0, 1)  # 只保留正向（皱纹线条）
-            
-    #         # 创建圆形渐变mask，限制皱纹显示区域
-    #         # circle_mask = np.zeros((h, w), dtype="float32")
-    #         # cv2.circle(circle_mask, (cx, cy), radius, 1.0, -1, cv2.LINE_AA)
-    #         circle_mask = np.zeros((h, w), dtype="float32")
-    #         cv2.ellipse(circle_mask, (cx, cy), (radius*2, radius), angle, angle, 360-angle, 1.0, -1, cv2.LINE_AA)
-    #         # # 高斯模糊使边缘平滑过渡
-    #         # blur_k_odd = blur_k if blur_k % 2 == 1 else blur_k + 1
-    #         # circle_mask = cv2.GaussianBlur(circle_mask, (blur_k_odd, blur_k_odd), 0)
-    #         circle_mask = circle_mask[:, :, np.newaxis]  # 扩展维度 [h, w, 1]
-            
-    #         # 直接用皱纹纹理乘以圆形mask
-    #         local_wrinkle = wrinkle_mask_i * circle_mask
-            
-    #         # 累加到总mask（取最大值避免重叠区域过暗）
-    #         # img0[local_wrinkle>0] = local_wrinkle[local_wrinkle>0]
-    #         img0 = np.maximum(img0, local_wrinkle)
-
-    #     return img0
-    
-    # def process_wrinkle(self, img, params, lms_i_new=None, frame_idx=0):
-    #     """
-    #     仿照 process_pimple 的逻辑处理皱纹
-    #     """
-    #     img_ori = img.copy()
-    #     brightness_delta = params['b']
-    #     contrast_factor = params['c']
-    #     saturation_factor = params['s']
-    #     wrinkle_list = params['wrinkle_list']
-
-    #     if brightness_delta == 0 and contrast_factor == 1.0 and saturation_factor == 1.0:
-    #         return img
-
-    #     # --- 步骤 A: 亮度和对比度 ---
-    #     img = img.astype(np.float32)
-    #     img = img * contrast_factor + brightness_delta
-    #     img = np.clip(img, 0, 255)
-
-    #     # --- 步骤 B: 饱和度 ---
-    #     if abs(saturation_factor - 1.0) > 0.01:
-    #         img = img.astype(np.uint8)
-    #         hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
-    #         hsv_img[..., 1] *= saturation_factor
-    #         hsv_img[..., 1] = np.clip(hsv_img[..., 1], 0, 255)
-    #         hsv_img = hsv_img.astype(np.uint8)
-    #         img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
-    #     else:
-    #         img = img.astype(np.uint8)
-
-    #     mask = (img_ori == 0).all(axis=2)
-    #     img[mask] = 0
-
-    #     # --- 步骤 C: 获取皱纹 mask 并混合（仿照 pimple）---
-    #     wrinkle_mask = self._apply_wrinkle(img, wrinkle_list, lms_i_new)  
-        
-    #     cv2.imwrite("/m2v_intern/mengzijie/DiffSynth-Studio/data/traindataset/ID_Encoder/wrinklemask.png", (wrinkle_mask).astype(np.uint8))
-        
-    #     # 混合：mask=0 的地方用处理后的 img（变暗的肤色），mask=1 的地方用原图
-    #     # mask = (wrinkle_mask > 0).astype(np.float32)
-    #     # SUM = np.sum(wrinkle_mask, axis=(0,1))
-    #     # NUM = np.sum(mask, axis=(0,1))
-    #     # average_wrinkle_mask = SUM / NUM
-    #     # # print(SUM, NUM, average_wrinkle_mask)
-    #     # img = img + (wrinkle_mask-1.5*average_wrinkle_mask) * mask
-    #     # img[img>255] = 255
-    #     # img[img<0] = 0
-    #     # img = img.astype(np.uint8)
-
-    #     img = (wrinkle_mask / 256.0 * img + (1 - wrinkle_mask/256.0) * img_ori)
-    #     return img
     
     
     def get_center_crop_face(self, img, landmarks, landmarksi, scale=1.5, target_w=None, target_h=None):

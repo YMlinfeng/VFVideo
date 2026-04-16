@@ -2,7 +2,8 @@
 
 # 1. 基础信息获取
 hostfile=/etc/mpi/hostfile
-Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
+# Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
+Port=22
 # 总进程数（总GPU数）
 np=$(cat $hostfile | cut -d'=' -f2 | awk '{sum += $0} END {print sum}')
 echo "Total GPUs: $np"
@@ -21,8 +22,8 @@ export PYTHONUNBUFFERED=1
 export PYTHONWARNINGS="ignore::FutureWarning"
 export MODELSCOPE_HTTP_TIMEOUT=300
 export MODELSCOPE_MAX_RETRIES=10
-# export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
-# cat $ACCELERATE_CONFIG_FILE
+export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
+cat $ACCELERATE_CONFIG_FILE
 
 # 3. 准备 Python 启动指令
 cd /m2v_intern/mengzijie/DiffSynth-Studio/
@@ -30,7 +31,6 @@ PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # 4. 执行 mpirun
 mpirun --allow-run-as-root -np $np \
-    -mca plm_rsh_args "-p ${Port}" \
     -hostfile $hostfile \
     -bind-to none -map-by slot \
     --mca btl tcp,self \
@@ -53,6 +53,7 @@ mpirun --allow-run-as-root -np $np \
     -x ACCELERATE_CONFIG_FILE \
     -x DEEPSPEED_FORCE_MULTI_NODE \
     -x WORLD_SIZE=$np \
+    -x NCCL_TOPO_FILE \
     $PYTHON_EXE -u examples/wanvideo/model_training/train.py \
       --dataset_base_path "" \
       --dataset_metadata_path "/m2v_intern/mengzijie/DiffSynth-Studio/dataset/traindataset/v4.0/fulltrainingdataset.txt" \
@@ -60,7 +61,7 @@ mpirun --allow-run-as-root -np $np \
       --dataset_num_workers 4 \
       --save_steps 200 \
       --max_pixels 268800 \
-      --num_frames 41 \
+      --num_frames 45 \
       --dataset_repeat 1 \
       --model_paths '[["/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00001-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00002-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00003-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00004-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00005-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00006-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00007-of-00007.safetensors"], "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/Wan2.1_VAE.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_clip_open-clip-xlm-roberta-large-vit-huge-14.safetensors"]' \
       --learning_rate 1e-5 \
@@ -69,7 +70,7 @@ mpirun --allow-run-as-root -np $np \
       --remove_prefix_in_ckpt "pipe.dit." \
       --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.0" \
       --extra_inputs "input_image" \
-      --offload_optimizer_device "cpu" \
+      --offload_optimizer_device "none" \
       --gradient_accumulation_steps 1 \
       --enable_id_grid \
       --id_grid_max_pixels 1048576 \
@@ -77,8 +78,8 @@ mpirun --allow-run-as-root -np $np \
       --id_drop_rate 0.2 \
       --use_swanlab \
       --swanlab_mode "local" \
-      --swanlab_project "wan_video_id_grid_training_i2v_v4.0" \
-      --swanlab_run_name "i2v_v4.0" \
+      --swanlab_project "wan_video_id_grid_training" \
+      --swanlab_run_name "full_data" \
     2>&1 | tee logs/wan_train.log
 
 # --trainable_models "dit.audio_injector" \

@@ -902,14 +902,14 @@ class LoadIDGrid(DataProcessingOperator):
         # 获取视频路径
         video_path = self._get_video_path(data)
         if video_path is None:
-            print(f"[LoadIDGrid] Warning: No video path found in data")
+            print(f"[LoadIDGrid Bugtodo]: No video path found in data")
         
         # 获取帧率信息
         fps = float(data.get("fps", self.tgt_fps))
         ori_fps = float(data.get("ori_fps", fps))
         
         # 处理 ori_fps 为 nan 的情况
-        if str(ori_fps) == "nan" or ori_fps <= 0:
+        if str(ori_fps) == "nan" or ori_fps <= 0.0001:
             ori_fps = fps
         
         # 查找姿态文件

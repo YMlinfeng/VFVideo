@@ -147,21 +147,9 @@ class UnifiedDataset(torch.utils.data.Dataset):
                 aug_intensity=id_grid_aug_intensity,
                 id_grid_num_frames=id_grid_num_frames,
             )
-        
         # ========== 调试可视化初始化 ==========
         self.debug = debug
         self.debug_visualizer = DebugVisualizer(enabled=debug, save_dir=debug_save_dir)
-    
-    # @staticmethod
-    # def default_image_operator(
-    #     base_path="",
-    #     max_pixels=1920*1080, height=None, width=None,
-    #     height_division_factor=16, width_division_factor=16,
-    # ):
-    #     return RouteByType(operator_map=[
-    #         (str, ToAbsolutePath(base_path) >> LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor)),
-    #         (list, SequencialProcess(ToAbsolutePath(base_path) >> LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor))),
-    #     ])
     
     @staticmethod
     def default_video_operator(
@@ -170,19 +158,6 @@ class UnifiedDataset(torch.utils.data.Dataset):
         height_division_factor=16, width_division_factor=16,
         num_frames=81, time_division_factor=4, time_division_remainder=1,
     ):
-        # return RouteByType(operator_map=[
-        #     (str, ToAbsolutePath(base_path) >> RouteByExtensionName(operator_map=[
-        #         (("jpg", "jpeg", "png", "webp"), LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor) >> ToList()),
-        #         # (("gif",), LoadGIF(
-        #         #     num_frames, time_division_factor, time_division_remainder,
-        #         #     frame_processor=ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor),
-        #         # )),
-        #         (("mp4", "avi", "mov", "wmv", "mkv", "flv", "webm"), LoadVideo(
-        #             num_frames, time_division_factor, time_division_remainder,
-        #             frame_processor=ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor),
-        #         )),
-        #     ])),
-        # ])
         return RouteByType(operator_map=[
             (str, RouteByExtensionName(operator_map=[
                 # (("jpg", "jpeg", "png", "webp"), LoadImage() >> ImageCropAndResize(height, width, max_pixels, height_division_factor, width_division_factor) >> ToList()),
@@ -217,6 +192,36 @@ class UnifiedDataset(torch.utils.data.Dataset):
                 for line in f:
                     metadata.append(json.loads(line.strip()))
             self.data = metadata
+        elif metadata_path.endswith(".txt"):
+            print(f"[Dataset] Loading TXT: {metadata_path}")
+            data_list =[]
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    row_dict = {}  
+                    try:
+                        line = line.strip()
+                        if not line: continue
+                        items = line.split('\t')
+                        for item in items:
+                            if ':' in item:
+                                key, val = item.split(':', 1)
+                                key = key.strip()
+                                if val.startswith('"') and val.endswith('"'):
+                                    val = val[1:-1]
+                                val = val.strip()  
+                                if key == "video_length" and val != "none":
+                                    val = int(float(val))
+                                elif key == "fps" and val != "none":
+                                    val = float(val)
+                                row_dict[key] = val
+                        data_list.append(row_dict)
+                    except Exception as e:
+                        current_idx = row_dict.get("global_idx", "Unknown")
+                        print(f"[Bug] Failed to parse line in global_idx: {current_idx}. Error: {e}")
+                        continue
+                        
+            self.data = data_list
+            print(f"[Dataset] Successfully loaded {len(self.data)} rows from TXT.")
         else:
             # 处理多个 CSV 混合 (用逗号分隔的路径)
             paths = metadata_path.split(',')
@@ -273,32 +278,18 @@ class UnifiedDataset(torch.utils.data.Dataset):
             self.use_dataframe = True
 
     def __getitem__(self, data_id):
-        # if self.load_from_cache:
-        #     data = self.cached_data[data_id % len(self.cached_data)]
-        #     data = self.cached_data_operator(data)
-        # else:
-            # data (仓库):就是当前这一行 CSV 数据：{'video': 'A.mp4', 's2v_pose_video': 'B.mp4', 'input_audio': 'C.mp3', 'prompt': '...'}
-            # self.data_file_keys (购物清单)，告诉程序"我这次训练只需要处理这几列文件：['video', 'input_audio', 's2v_pose_video']
         try:    
             if hasattr(self, "use_dataframe") and self.use_dataframe:
                 data = self.metadata_df.iloc[data_id % len(self.metadata_df)].to_dict()
             else:
                 data = self.data[data_id % len(self.data)].copy() # {'video': 'wans2v/s2v_video.mp4', 's2v_pose_video': 'wans2v/pose.mp4', 'input_audio': 'wans2v/sing.MP3', 'prompt': 'a person is singing'}
             # ================== 九宫格ID注入模块 ==================
-            # 如果启用了九宫格ID注入，则加载九宫格参考视频
             if self.enable_id_grid and self.id_grid_loader is not None:
-                # 按照一定概率（drop_rate）不注入 ID (用于训练无条件生成能力，支持 CFG)
                 drop_rate = getattr(self, "id_drop_rate", 0.0)
                 if random.random() < drop_rate:
-                    # 设定为全零张量 (黑色)，和 CFG Negative 的行为一致
                     id_grid_tensor = torch.zeros((3, self.id_grid_num_frames, self.id_grid_height, self.id_grid_width), dtype=torch.float32)
                 else:
-                    # 调用 LoadIDGrid 生成九宫格ID参考
                     id_grid_tensor = self.id_grid_loader(data)
-                # 调用 LoadIDGrid 生成九宫格ID参考
-                # 111
-                # 将九宫格数据存入 data 字典
-                # id_grid_tensor 形状: (C, T, H, W)，值域 [-1, 1]
                 data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])->([3, 1, 480, 528]) 其中41和1是九宫格中每一个小格子的帧数，通过id_frames参数控制
                 
                 # Debug 可视化
@@ -324,7 +315,6 @@ class UnifiedDataset(torch.utils.data.Dataset):
             # debug_raw_audio = None
 
             for key in self.data_file_keys:
-                # if key in data:
                 # 只有audio需要特殊处理
                 if key in self.special_operator_map: # {'animate_face_video': <diffsynth.core.data.operators.DataProcessingPipeline object at 0x7faa2d200f50>, 'input_audio': <diffsynth.core.data.operators.DataProcessingPipeline object at 0x7faa2d200fb0>}
                     operator = self.special_operator_map[key]
@@ -334,12 +324,8 @@ class UnifiedDataset(torch.utils.data.Dataset):
                     continue
                 # 1. 判断是否需要传入全量 data (针对 LoadAudio)
                 if hasattr(operator, "needs_full_data") and operator.needs_full_data:
-                    # 传整个字典进去
                     # LoadAudio 走这里
                     processed_val = operator(data)
-                    # 确保音频数据不会在训练过程中被in-place修改111
-                    # if torch.is_tensor(processed_val):
-                    #     processed_val = processed_val.clone().detach()
                     data[key] = processed_val
                     
                     # 捕获音频数据用于 Debug (假设 key 是 audio_path)
@@ -394,7 +380,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
             
             return data
         except Exception as e:
-            print(f"[Bug todo Dataset] Error processing data_id {data_id}: {e}. Retrying with another sample.")
+            print(f"[dataBug todo Dataset] Error processing data_id {data_id}: {e}. Retrying with another sample.")
             return self.__getitem__(random.randint(0, len(self) - 1))
 
 

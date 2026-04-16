@@ -649,7 +649,7 @@ def launch_training_task(
         optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     print(f"Trainable modules: {len(list(model.trainable_modules()))}")
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
-    dataloader = torch.utils.data.DataLoader(dataset, shuffle=not debug, collate_fn=lambda x: x[0], num_workers=num_workers)
+    dataloader = torch.utils.data.DataLoader(dataset, shuffle=False, collate_fn=lambda x: x[0], num_workers=num_workers)
     
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
 
@@ -728,6 +728,7 @@ def launch_training_task(
                         timer.record("scheduler_step", 0)
                 
                 end_time = time.perf_counter()
+                print(f"data:{data["global_idx"]} done!")
         
         accelerator.wait_for_everyone()
         timer.print_summary(accelerator)
@@ -736,7 +737,7 @@ def launch_training_task(
         model_logger.on_training_start(accelerator, model)
     
         for epoch_id in range(num_epochs):
-            for data in tqdm(dataloader):
+            for data in tqdm(dataloader, desc=f"Epoch {epoch_id}", disable=not accelerator.is_main_process):
                 with accelerator.accumulate(model):
                     optimizer.zero_grad() # PyTorch 默认会累积梯度，所以每次迭代开始要手动清零
                     loss = model(data) 
@@ -749,6 +750,8 @@ def launch_training_task(
                         lr=current_lr
                     )
                     scheduler.step() # 随着训练进行，调整学习率（通常是逐渐减小）
+                print(f"data:{data["global_idx"]} done!")
+
         accelerator.wait_for_everyone() # 确保所有进程完成
         model_logger.on_training_end(accelerator, model, save_steps)
 

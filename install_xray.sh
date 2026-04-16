@@ -16,7 +16,7 @@ arg_install_xray_pkg=$2  #  ''：单机自己下载安装        '/full/path/xx'
 arg_install_xray_ver=$3  #  ''：单机自己查xray最新版本   '/full/path/xx'：单机使用已读取的xray版本（例如 0.3.28）
 arg_install_kccl_ver=$4  #  ''：单机自己查kccl版本列表   '/full/path/xx'：单机使用已读取的kccl列表（例如 libkccl1 libkccl2）
 arg_install_pip_cache=$5  #  ''：单机自己独立装          '/full/path'：单机使用传入的路径作为pip cache目录（复用内部下载好的文件，禁用网络）
-arg_install_apt_cache=$6  #  ''：单机自己独立装          '/full/path'：单机使用传入的路径作为apt cache目录（复用内部下载好的文件，禁用网络）
+arg_install_pkg_cache=$6  #  ''：单机自己独立装          '/full/path'：单机使用传入的路径作为apt/yum cache目录（复用内部下载好的文件，禁用网络）
 
 if [ "$(cat /etc/xray_std_version 2>&1)" == "$(xray version 2>&1 | awk '{print $NF}')" ] && [ "$XRAY_INSTALL_FORCE" != "1" ]; then
     print_green "this docker image was already installed with standard xray version '$(cat /etc/xray_std_version)', skip updating"
@@ -82,10 +82,10 @@ function download_xray_pkg() {
         _download_="$(hostname -i)_${_name_}"
         echo "downloading xray pkg ${_download_} from ${_remote_} into dir $(pwd)" >&2 # outputs to stderr
         wget -qO "${_download_}" "${_remote_}" || { print_red "Error: download xray from ${_remote_} failed"; exit 4; }
-        echo $(realpath "${_download_}")
+        realpath "${_download_}"
     else
         echo "reusing existing xray pkg ${arg_install_xray_pkg} in dir $(pwd)" >&2 # outputs to stderr
-        echo $(realpath "${arg_install_xray_pkg}")
+        realpath "${arg_install_xray_pkg}"
     fi
 }
 
@@ -122,15 +122,15 @@ function apt_install_func() {
     dpkg --configure -a &> /dev/null
     # 主节点仅下载
     if [ "$apt_download_only" == 1 ]; then
-        apt-get install -y --download-only --reinstall -o Dir::Cache::archives="$apt_cache_dir" "$@" &>/dev/null ||
-            apt-get install -y --download-only --reinstall -o Dir::Cache::archives="$apt_cache_dir" "$@" &>/dev/null ||
+        apt-get install -y --download-only --reinstall -o Dir::Cache::archives="$pkg_cache_dir" "$@" &>/dev/null ||
+            apt-get install -y --download-only --reinstall -o Dir::Cache::archives="$pkg_cache_dir" "$@" &>/dev/null ||
                 { print_red "ERROR: apt download $* failed"; exit 6; }
-        print_green "apt pkgs $* downloaded into $apt_cache_dir"; return 0
+        print_green "apt pkgs $* downloaded into $pkg_cache_dir"; return 0
     fi
     # 所有节点尝试用缓存安装
-    if [ -d "$arg_install_apt_cache" ]; then
+    if [ -d "$arg_install_pkg_cache" ]; then
         all_cached=1; cached_debs=(); local found_deb
-        for pkg in "$@"; do found_deb=$(ls "$arg_install_apt_cache"/${pkg}_*.deb 2>/dev/null | head -1);
+        for pkg in "$@"; do found_deb=$(ls "$arg_install_pkg_cache"/${pkg}_*.deb 2>/dev/null | head -1);
             if [ -z "$found_deb" ]; then all_cached=false; break; fi; cached_debs+=("$found_deb")
         done
         if [ "$all_cached" = 1 ] && [ ${#cached_debs[@]} -gt 0 ]; then
@@ -151,11 +151,42 @@ function apt_install_func() {
     fi
 }
 function yum_install_func() {
-    if yum install -y --nogpgcheck --skip-broken $yum_pkgs &> /dev/null; then
-        print_green "yum install $yum_pkgs (from source) success"; return 0
-    elif yum install -y --nogpgcheck --skip-broken $yum_pkgs &> /dev/null; then
-        print_green "yum install $yum_pkgs (from source) retry success"; return 0
-    else print_red "yum install $yum_pkgs failed"
+    mkdir -p /tmp; chmod 1777 /tmp;
+    if [ "$yum_updated" != 1 ]; then
+        if yum makecache &> /dev/null; then print_green "yum makecache success"; yum_updated=1
+        elif yum makecache &> /dev/null; then print_green "yum makecache success"; yum_updated=1
+        else print_red "yum makecache failed"; exit 6;
+        fi
+    fi
+    # 主节点仅下载
+    if [ "$yum_download_only" == 1 ]; then
+        mkdir -p "$pkg_cache_dir"
+        yum install -y --downloadonly --downloaddir="$pkg_cache_dir" --nogpgcheck --skip-broken "$@" &>/dev/null ||
+            yum install -y --downloadonly --downloaddir="$pkg_cache_dir" --nogpgcheck --skip-broken "$@" &>/dev/null ||
+                { print_red "ERROR: yum download $* failed"; exit 6; }
+        print_green "yum pkgs $* downloaded into $pkg_cache_dir"; return 0
+    fi
+    # 所有节点尝试用缓存安装
+    if [ -d "$arg_install_pkg_cache" ]; then
+        all_cached=1; cached_rpms=(); local found_rpm
+        for pkg in "$@"; do found_rpm=$(ls "$arg_install_pkg_cache"/${pkg}-*.rpm 2>/dev/null | head -1);
+            if [ -z "$found_rpm" ]; then all_cached=false; break; fi; cached_rpms+=("$found_rpm")
+        done
+        if [ "$all_cached" = 1 ] && [ ${#cached_rpms[@]} -gt 0 ]; then
+            if yum install -y --nogpgcheck "${cached_rpms[@]}" &> /dev/null; then
+                print_green "yum install $* (from cache) success"; return 0
+            elif yum install -y --nogpgcheck "${cached_rpms[@]}" &> /dev/null; then
+                print_green "yum install $* (from cache) retry success"; return 0
+            else print_yellow "yum install $* (from cache) failed"
+            fi
+        fi
+    fi
+    # 所有节点尝试用网络安装
+    if yum install -y --nogpgcheck --skip-broken "$@" &> /dev/null; then
+        print_green "yum install $* (from source) success"; return 0
+    elif yum install -y --nogpgcheck --skip-broken "$@" &> /dev/null; then
+        print_green "yum install $* (from source) retry success"; return 0
+    else print_yellow "yum install $* (from source) failed"
     fi
 }
 
@@ -164,7 +195,14 @@ function setup_pip_venv() { # 创建python虚拟环境并安装依赖（主节�
     SYSTEM_PYTHON3=$(python3 -c "import sys; print(getattr(sys, '_base_executable', sys.executable))" 2>/dev/null)
     [ -z "$SYSTEM_PYTHON3" ] && { print_red "ERROR: No system python3 found"; exit 7; }
     if ! command -v virtualenv &> /dev/null; then  # master需要预先安装虚拟环境，有利于下载pip包给worker使用
-        local options="-q --break-system-packages --root-user-action=ignore"
+        PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+        PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+        PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+        if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -le 8 ]; then
+            local options="-q --use-feature=2020-resolver"
+        else
+            local options="-q --break-system-packages --root-user-action=ignore"
+        fi
         if [ ! -d "$arg_install_pip_cache" ]; then pip3 install $options virtualenv 2>/dev/null;
         else pip3 install $options --no-index --find-links="$arg_install_pip_cache" virtualenv 2>/dev/null; fi
     fi
@@ -179,7 +217,7 @@ setup_pip_venv # 提前准备虚拟环境
 function install_pip_venv() {
     if [ ! -d "$arg_install_pip_cache" ]; then /opt/venv/xray/bin/pip3 install -q "${pip3_pkgs[@]}"
     else /opt/venv/xray/bin/pip3 install -q --no-index --find-links="$arg_install_pip_cache" "${pip3_pkgs[@]}"; fi
-    grep -q plotly <<< "$(/opt/venv/xray/bin/pip3 list)" || print_yellow "WARN: pip install "${pip3_pkgs[*]}" failed"
+    grep -q plotly <<< "$(/opt/venv/xray/bin/pip3 list)" || print_yellow "WARN: pip install ${pip3_pkgs[*]} failed"
 }
 
 
@@ -197,23 +235,34 @@ function check_ssh() { # 这里避免高并发 wait pid; code=$? 因为会在某
 
 # Step1: 多机安装，尝试选择可读写的最大可用量ceph网盘路径
 if [ "$arg_install_nccl_dir" == "all" ]; then hostfile=/etc/mpi/mpi-hostfile
-    for ((j=10; j>=0; j--)); do if check_ssh; then break; else sleep 2s; fi; if [ "$j" == 0 ]; then exit 7; fi; done
+    for ((j=10; j>=0; j--)); do if check_ssh $hostfile ; then break; else sleep 2s; fi; if [ "$j" == 0 ]; then exit 7; fi; done
     ceph_df_info=$(xargs -I{} df -B 1G {} < <(awk '{print $3}' < <(grep -E "type ceph [^a-z]rw[^a-z]" < <(mount))))
     read -r ceph_dir ceph_size _ < <(tail -1 < <(sort -k2 -n < <(awk '!/^File/ {print $6,$4}' <<< "$ceph_df_info")))
     if [ -d "$ceph_dir" ] && [[ "$ceph_size" =~ ^[1-9][0-9]*$ ]]; then
+        master_install_pkgs_start=$(date +%s)
         mkdir -p "${ceph_dir}/xray/" && cp "$0" "${ceph_dir}/xray/" && cd "${ceph_dir}/xray/"
-        apt_cache_dir="${ceph_dir}/xray/apt_cache_${KML_ID}_${JOB_NAME}"; mkdir -p $apt_cache_dir; print_green "apt cache set to $apt_cache_dir"
-        apt_download_only=1 apt_install_func "${apt_pkgs1[@]}" && apt_download_only=1 apt_install_func "${apt_pkgs2[@]}"
+        if [ "${_os_}" == "ubuntu" ]; then
+            pkg_cache_dir="${ceph_dir}/xray/apt_cache_${KML_ID}_${JOB_NAME}"; mkdir -p $pkg_cache_dir; print_green "apt cache set to $pkg_cache_dir"
+            apt_download_only=1 apt_install_func "${apt_pkgs1[@]}" && apt_download_only=1 apt_install_func "${apt_pkgs2[@]}"
+        else
+            pkg_cache_dir="${ceph_dir}/xray/yum_cache_${KML_ID}_${JOB_NAME}"; mkdir -p $pkg_cache_dir; print_green "yum cache set to $pkg_cache_dir"
+            yum_download_only=1 yum_install_func "${yum_pkgs1[@]}" && yum_download_only=1 yum_install_func "${yum_pkgs2[@]}"
+        fi
         pip_cache_dir="${ceph_dir}/xray/pip_cache_${KML_ID}_${JOB_NAME}"; mkdir -p $pip_cache_dir; print_green "pip cache set to $pip_cache_dir"
-        if /opt/venv/xray/bin/pip3 download -q --dest "$pip_cache_dir" virtualenv "${pip3_pkgs[@]}"; then 
-        print_green "pip pkgs downloaded into $pip_cache_dir"; else print_red "ERROR: pip3 download "${pip3_pkgs[*]}" failed"; exit 8; fi
+        if /opt/venv/xray/bin/pip3 download -q --dest "$pip_cache_dir" virtualenv "${pip3_pkgs[@]}"; then
+            print_green "pip pkgs downloaded into $pip_cache_dir"
+        else
+            print_red "ERROR: pip3 download ${pip3_pkgs[*]} failed"; exit 8
+        fi
+        master_install_pkgs_end=$(date +%s)
+        echo "master install pkgs cost $((master_install_pkgs_end-master_install_pkgs_start)) seconds"
     else
         unset ceph_dir; print_yellow "find no available ceph dir"
     fi
     TCP_NIC=$(grep -o "^\w*" < <(grep -B1 " ""$(hostname -i)"" " < <(ifconfig)))
     xray_ver="$(read_xray_latest)"; xray_pkg="$(download_xray_pkg)"; kccl_ver="$(read_kccl_latests)"
     if ! ifconfig "$TCP_NIC" &>/dev/null ; then print_red "ERROR: cannot find valid tcp nic"; exit 9; fi
-    handle_output=' 2>&1 | sed "s/^/[$(hostname)] /g" || { echo -e "\e[31m\e[100m xray install failed on $(hostname) \e[0m" ; exit 1; }'
+    handle_output=' 2>&1 | while IFS= read -r line; do echo "[$(hostname)] [$(date +%s)] $line"; done || { echo -e "\e[31m\e[100m xray install failed on $(hostname) \e[0m" ; exit 1; }'
     mpirun_return="0"; PATH="$(sed -e 's/\/opt\/xray\/deps://' <<< "$PATH")"; mpirun=$(which mpirun)
     if [ -d "$ceph_dir" ]; then
         print_green "installing xray onto multi-hosts via ceph directory $ceph_dir/xray"
@@ -222,7 +271,7 @@ if [ "$arg_install_nccl_dir" == "all" ]; then hostfile=/etc/mpi/mpi-hostfile
             -mca btl tcp,self -mca pml ob1 -mca btl_tcp_if_include $TCP_NIC -mca oob_tcp_if_include $TCP_NIC \
             -mca plm_rsh_num_concurrent 600 -mca routed_radix 600 -mca btl_openib_allow_ib false -mca orte_abort_on_non_zero_status 0 \
             -x PATH -x HOME -x SUDO_USER -x XRAY_INSTALL_DEV -x XRAY_INSTALL_FORCE \
-            bash -c "set -e; set -o pipefail; bash ${ceph_dir}/xray/$0 '${ceph_dir}' '${xray_pkg}' '${xray_ver}' '${kccl_ver}' '${pip_cache_dir}' '${apt_cache_dir}' $handle_output"
+            bash -c "set -e; set -o pipefail; bash ${ceph_dir}/xray/$0 '${ceph_dir}' '${xray_pkg}' '${xray_ver}' '${kccl_ver}' '${pip_cache_dir}' '${pkg_cache_dir}' $handle_output"
     else # --preload-files --set-cwd-to-session-dir 这种用法可能在某些镜像会有未知原因报错 Epoll ADD(1) on fd xx failed 
         print_green "installing xray onto multi-hosts by mpirun preload-files"
         env -i PATH="$PATH" HOME="$HOME" SUDO_USER="$SUDO_USER" OPAL_PREFIX="$OPAL_PREFIX" XRAY_INSTALL_DEV="$XRAY_INSTALL_DEV" XRAY_INSTALL_FORCE="$XRAY_INSTALL_FORCE" \
@@ -230,7 +279,7 @@ if [ "$arg_install_nccl_dir" == "all" ]; then hostfile=/etc/mpi/mpi-hostfile
             -mca btl tcp,self -mca pml ob1 -mca btl_tcp_if_include $TCP_NIC -mca oob_tcp_if_include $TCP_NIC \
             -mca plm_rsh_num_concurrent 600 -mca routed_radix 600 -mca btl_openib_allow_ib false -mca orte_abort_on_non_zero_status 0 \
             -x PATH -x HOME -x SUDO_USER -x XRAY_INSTALL_DEV -x XRAY_INSTALL_FORCE --preload-files "$0" --set-cwd-to-session-dir \
-            bash -c "set -e; set -o pipefail; bash $0 '${ceph_dir}' '' '${xray_ver}' '${kccl_ver}' $handle_output"
+            bash -c "set -e; set -o pipefail; bash $0 '${ceph_dir}' '' '${xray_ver}' '${kccl_ver}' '' '' $handle_output"
     fi
     mpirun_return="$?"; rm -f "${xray_pkg}" &>/dev/null || true
     if [ "$mpirun_return" != "0" ]; then print_red "Error: mpirun xray install failed on some nodes"; exit 10; fi
@@ -240,9 +289,9 @@ fi
 
 # Step2: 更新xray的依赖
 if [ "${_os_}" == "ubuntu" ]; then echo "updating apt dependencies";
-    apt_install_func "${apt_pkgs1[@]}" && apt_install_func "${apt_pkgs2[@]}" && lldpd && install_pip_venv
+    apt_install_func "${apt_pkgs1[@]}" && apt_install_func "${apt_pkgs2[@]}" && install_pip_venv && lldpd
 elif [ "${_os_}" == "centos" ]; then echo "updating yum dependencies";
-    yum_install_func "${yum_pkgs1[@]}" && yum_install_func "${yum_pkgs2[@]}" && lldpd && install_pip_venv
+    yum_install_func "${yum_pkgs1[@]}" && yum_install_func "${yum_pkgs2[@]}" && install_pip_venv && lldpd
 fi
 
 
@@ -263,7 +312,8 @@ fi
 if [ "$up_to_date" == "0" ]; then
     xray_pkg=$(download_xray_pkg)
     PATH=$(sed -e 's/:\/opt\/xray\/deps//g' -e 's/^\/opt\/xray\/deps://' <<< "$PATH")  # 排除上次安装卸载的影响
-    which mpirun > /etc/xray_mpirun_path; which srun > /etc/xray_srun_path; which ray > /etc/xray_ray_path
+    which mpirun > /etc/xray_mpirun_path; which srun > /etc/xray_srun_path
+    which ray > /etc/xray_ray_path; which deepspeed > /etc/xray_deepspeed_path
     error="0"
     if [ "${_os_}" == "ubuntu" ]; then
         dpkg --configure -a &> /dev/null || true
@@ -278,15 +328,27 @@ if [ "$up_to_date" == "0" ]; then
 fi
 
 
-# Step5: 现场编译gpu版本perftest，预编译版易出现不匹配的问题，编译时环境内多个版本也可能导致编译&链接版本不同因此需要pkg-config查询后指定
-tar="perftest-4.5-0.20-cuda13.src.tar"
-if [ -f "/opt/xray/$tar" ]; then
-    pushd /opt/xray/ >/dev/null && tar -xvf "$tar" >/dev/null && cd perftest && ./autogen.sh &>/dev/null \
+# Step5: 优先现场编译gpu版本perftest，优先使用simple_write_bw，编译失败则回退perftest
+function install_perftest() {
+    perftest_tar="perftest-4.5-0.20-cuda13.src.tar"
+    [ -f "/opt/xray/$perftest_tar" ] && tar -xvf "$perftest_tar" >/dev/null && cd perftest && ./autogen.sh &>autogen.log \
     && cflags=$(pkg-config --cflags libibverbs) && libs=$(pkg-config --libs libibverbs) \
-    && ./configure CPPFLAGS="$cflags" LDFLAGS="$libs" CUDA_H_PATH=/usr/local/cuda/include/cuda.h &>/dev/null \
-    && make -j &>/dev/null && cp ./ib_write_bw /opt/xray/deps/ \
-    && print_green "perftest install success" || print_yellow "WARN: perftest install failed" # do not exit
+    && ./configure CPPFLAGS="$cflags" LDFLAGS="$libs" CUDA_H_PATH=/usr/local/cuda/include/cuda.h &>configure.log \
+    && make -j &>make.log && cp ./ib_write_bw /opt/xray/deps/ && return 0;
+    return 1
+}
+function install_simple() {
+    simple_tar="simple_write_bw.tar"
+    [ -f "/opt/xray/$simple_tar" ] && tar -xvf "$simple_tar" >/dev/null && cd simple_write_bw \
+    && make CUDA_H_PATH=/usr/local/cuda/include/cuda.h &>make.log && cp ./simple_write_bw /opt/xray/deps/ && return 0;
+    return 1
+}
+cd /opt/xray/ || exit 14
+if install_simple; then print_green "simple_write_bw install success";
+elif install_perftest; then print_green "perftest install success";
+else print_yellow "WARN: simple_write_bw and perftest install failed";
 fi
+cd -
 
 
 # Step6: 下载合适的NCCL库到共享目录或本地目录
@@ -295,7 +357,7 @@ install_dir=$arg_install_nccl_dir
 if [ ! -d "$install_dir" ]; then install_dir="/opt"; fi
 if grep -q "$install_dir type ceph" <<< "$mount_info" && [[ $rank =~ ^[1-9][0-9]*$ ]]; then skip=1; fi
 KCCL_PATH="$install_dir/kccl/${_os_}/${_gpu_}"
-mkdir -p "$KCCL_PATH" && ls "$KCCL_PATH" >/dev/null && cd "$KCCL_PATH" || { print_red "ERROR: cannot enter $KCCL_PATH"; exit 14; }
+mkdir -p "$KCCL_PATH" && ls "$KCCL_PATH" >/dev/null && cd "$KCCL_PATH" || { print_red "ERROR: cannot enter $KCCL_PATH"; exit 15; }
 kccls="$(read_kccl_latests)"  # TODO 打点版本集成版本
 if [ "$skip" != "1" ]; then echo -e "downloading latest kccl into ${KCCL_PATH}"; fi
 remote_url="${cloud_storage}/user-cloud-storage/nccl-kai/kccl/${_os_}-${_gpu_}/"
@@ -305,7 +367,7 @@ for kccl in $kccls; do
             wget -qO "$kccl" "${remote_url}$kccl"
         fi
         if ! timeout 5s ldd $kccl >/dev/null; then
-            print_red "ERROR: download from ${remote_url}$kccl to ${KCCL_PATH}/$kccl failed"; exit 15
+            print_red "ERROR: download from ${remote_url}$kccl to ${KCCL_PATH}/$kccl failed"; exit 16
         fi
     fi
     echo "${KCCL_PATH}/$kccl" > /etc/xray_kccl_path
