@@ -158,6 +158,6 @@ mpirun --allow-run-as-root -np $np \
     2>&1 | tee logs/id_grid_inference_${OUTPUT_TIMESTAMP}.log
 
 echo "=============================================="
-echo "Inference finished!"
+echo "Inference finished!!"
 echo "Output directory: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
 echo "=============================================="
