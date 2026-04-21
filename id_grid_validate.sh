@@ -12,7 +12,7 @@ export http_proxy=http://10.66.16.238:11080
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 hostfile=/etc/mpi/hostfile
-Port=$(cat /etc/ssh/ssh_config | grep 'Port' | cut -d'"' -f2)
+Port=$(grep -v '^#' /etc/ssh/ssh_config | grep 'Port' | awk '{print $2}' | head -n 1)
 
 # 总进程数（总GPU数）
 np=$(cat $hostfile | cut -d'=' -f2 | awk '{sum += $0} END {print sum}')
@@ -43,14 +43,14 @@ OUTPUT_BASE_DIR="output_id_grid"
 # 模型参数
 # 修改为训练好的 Checkpoint 路径
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-1000.safetensors" 
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.0/step-4200.safetensors" 
 # ENABLE_ID_GRID=false
 ENABLE_ID_GRID=true
 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 
 # 推理参数 (等效面积优先)
-NUM_FRAMES=77
+NUM_FRAMES=49
 MAX_PIXELS=268800  # 480x560
 NUM_INFERENCE_STEPS=40
 SEED=42
