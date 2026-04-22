@@ -12,7 +12,7 @@ export http_proxy=http://10.66.16.238:11080
 export https_proxy=http://10.66.16.238:11080
 export no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com
 hostfile=/etc/mpi/hostfile
-Port=$(grep -v '^#' /etc/ssh/ssh_config | grep 'Port' | awk '{print $2}' | head -n 1)
+# Port=$(grep -v '^#' /etc/ssh/ssh_config | grep 'Port' | awk '{print $2}' | head -n 1)
 
 # 总进程数（总GPU数）
 np=$(cat $hostfile | cut -d'=' -f2 | awk '{sum += $0} END {print sum}')
@@ -118,7 +118,7 @@ PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # ======================== 5. 执行 mpirun A800 ========================
 mpirun --allow-run-as-root -np $np \
-    -mca plm_rsh_args "-p ${Port}" \
+    -mca plm_rsh_args "-F /etc/ssh/ssh_config" \
     -hostfile $hostfile \
     -bind-to none -map-by slot \
     --mca btl tcp,self \
@@ -130,8 +130,10 @@ mpirun --allow-run-as-root -np $np \
     -x NCCL_IB_HCA=mlx5 \
     -x NCCL_IB_QPS_PER_CONNECTION=4 \
     -x NCCL_IB_TIMEOUT=32 \
-    -x NCCL_DEBUG=WARN \
+    -x NCCL_DEBUG=INFO \
+    -x NCCL_SOCKET_IFNAME=eth0 \
     -x PATH \
+    -x PYTHONPATH \
     -x LD_LIBRARY_PATH \
     -x http_proxy \
     -x https_proxy \
@@ -161,3 +163,42 @@ echo "=============================================="
 echo "Inference finished!!"
 echo "Output directory: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
 echo "=============================================="
+
+
+
+# cd /m2v_intern/mengzijie/DiffSynth-Studio/
+
+# export MASTER_ADDR=127.0.0.1
+# export MASTER_PORT=29509
+# export WORLD_SIZE=8
+# export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# export PYTHONPATH=$PYTHONPATH:/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion
+
+# mpirun --allow-run-as-root -np 8 \
+#     --mca btl tcp,self \
+#     -x PATH="/m2v_intern/mengzijie/env/wan2.2/bin:$PATH" \
+#     -x PYTHONPATH \
+#     -x LD_LIBRARY_PATH \
+#     -x PYTHONUNBUFFERED=1 \
+#     -x MASTER_ADDR \
+#     -x MASTER_PORT \
+#     -x WORLD_SIZE \
+#     -x OUTPUT_TIMESTAMP \
+#     -x http_proxy=http://10.66.16.238:11080 \
+#     -x https_proxy=http://10.66.16.238:11080 \
+#     -x no_proxy=localhost,127.0.0.1,localaddress,localdomain.com,internal,corp.kuaishou.com,test.gifshow.com,staging.kuaishou.com \
+#     /m2v_intern/mengzijie/env/wan2.2/bin/python -u /m2v_intern/mengzijie/DiffSynth-Studio/examples/wanvideo/model_training/validate_full/id_grid_infer.py \
+#         --dataset_metadata_path "dataset/all_id_test_shuf2.csv" \
+#         --output_base_dir "output_id_grid" \
+#         --output_timestamp "$OUTPUT_TIMESTAMP" \
+#         --ckpt_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.0/step-4200.safetensors" \
+#         --model_id "Wan-AI/Wan2.1-I2V-14B-720P" \
+#         --num_frames 49 \
+#         --max_pixels 268800 \
+#         --num_inference_steps 40 \
+#         --seed 42 \
+#         --fps 15 \
+#         --quality 5 \
+#         --enable_id_grid \
+#         --id_grid_max_pixels 268800 \
+#         --id_grid_num_frames 1

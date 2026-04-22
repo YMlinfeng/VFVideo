@@ -597,4 +597,5 @@ if __name__ == "__main__":
     #     print("=" * 50)
     #     debugpy.wait_for_client()  
     #     print("Debugger attached! Continuing...")
+    print("start inference!")
     main()
