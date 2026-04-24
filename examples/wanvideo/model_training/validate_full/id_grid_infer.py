@@ -24,7 +24,7 @@ if not hasattr(inspect, 'getargspec'):
     inspect.getargspec = getargspec
     inspect.ArgSpec = ArgSpec
 
-# === 2. 修复 numpy 兼容性 (针对 NumPy 1.24+) ===
+# === 2. 修复 numpy 兼容性 (针对 NumPy 1.24+) ===       
 # 这里的目的是把 numpy 删掉的那些别名手动塞回去
 # 这样 chumpy 执行 'from numpy import bool' 时才不会报错
 if not hasattr(np, 'bool'): np.bool = bool
@@ -74,7 +74,6 @@ def parse_args():
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    # parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v2.0/step-4200.safetensors", help="Model checkpoint path") # 模型路径
     parser.add_argument("--ckpt_path", type=str, default="", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
@@ -453,7 +452,8 @@ def save_inference_config(output_dir, args, rank):
 def main():
     # 初始化逻辑
     args = parse_args()
-    args.enable_id_grid = True
+    print(args)
+    # args.enable_id_grid = True
     rank, world_size, local_rank = get_distributed_info(args)
     if not torch.cuda.is_available(): raise RuntimeError("CUDA is not available")
     num_gpus = torch.cuda.device_count()
@@ -589,13 +589,13 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    # if os.environ.get("LOCAL_RANK", "0") == "0":
-    #     import debugpy
-    #     debugpy.listen(("0.0.0.0", 5678))
-    #     print("=" * 50)
-    #     print("Waiting for debugger to attach on port 5678...")
-    #     print("=" * 50)
-    #     debugpy.wait_for_client()  
-    #     print("Debugger attached! Continuing...")
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("=" * 50)
+        print("Waiting for debugger to attach on port 5678...")
+        print("=" * 50)
+        debugpy.wait_for_client()  
+        print("Debugger attached! Continuing...")
     print("start inference!")
     main()
