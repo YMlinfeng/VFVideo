@@ -206,7 +206,7 @@ def load_pipeline(args, device):
 def load_and_expand_id_images(id_image_paths):
     """
     加载并扩充 ID 图片到 9 张。
-    使用左右翻转或直接复制。
+    使用左右翻转或直接复制
     """
     images_bytes = []
     for p in id_image_paths:
