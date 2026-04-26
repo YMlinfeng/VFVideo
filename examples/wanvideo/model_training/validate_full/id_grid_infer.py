@@ -276,7 +276,7 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer, for
     debug_dir = os.path.join(args.output_base_dir, '[ID]_debug_face_grid')
     os.makedirs(debug_dir, exist_ok=True)
     
-    # 核心调用：使用提供的 get_face_grid 获取多帧九宫格数组
+    # 核心：使用提供的 get_face_grid 获取多帧九宫格数组
     res = smpl_infer.get_face_grid(
         image_data, 
         id_video_data=id_video_data, 
