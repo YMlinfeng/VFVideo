@@ -37,7 +37,8 @@ echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 3. 推理参数配置 ========================
 # 数据路径 (更新为 CSV 路径)
-DATASET_METADATA_PATH="dataset/all_id_test_shuf2.csv"
+# DATASET_METADATA_PATH="dataset/all_id_test_shuf2.csv"
+DATASET_METADATA_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/testdataset/v4.0/testdata.csv"
 OUTPUT_BASE_DIR="output_id_grid"
 
 # 模型参数

@@ -30,7 +30,7 @@ PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # 4. 执行 mpirun
 mpirun --allow-run-as-root -np $np \
-    -mca plm_rsh_args "-p ${Port}" \
+    -mca plm_rsh_args "-F /etc/ssh/ssh_config" \
     -hostfile $hostfile \
     -bind-to none -map-by slot \
     --mca btl tcp,self \
@@ -67,18 +67,18 @@ mpirun --allow-run-as-root -np $np \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.0" \
+      --output_path "/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1" \
       --extra_inputs "input_image" \
       --offload_optimizer_device "cpu" \
       --gradient_accumulation_steps 1 \
       --enable_id_grid \
       --id_grid_max_pixels 1048576 \
       --id_grid_num_frames 1 \
-      --id_drop_rate 0.2 \
+      --id_drop_rate 0.1 \
       --use_swanlab \
       --swanlab_mode "local" \
-      --swanlab_project "wan_video_id_grid_training_i2v_v4.0" \
-      --swanlab_run_name "i2v_v4.0" \
+      --swanlab_project "wan_video_id_grid_training_i2v_v4.1" \
+      --swanlab_run_name "i2v_v4.1" \
     2>&1 | tee logs/wan_train.log
 
 # --trainable_models "dit.audio_injector" \

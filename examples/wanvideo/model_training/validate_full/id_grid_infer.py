@@ -70,7 +70,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ID Grid I2V Inference Script")
     
     # 按照要求，将所有参数独立在一行，且默认值和 id_grid_validate.sh 完全一致
-    parser.add_argument("--dataset_metadata_path", type=str, default="dataset/all_id_test_shuf2.csv", help="Path to the CSV dataset") # 使用 CSV 文件
+    parser.add_argument("--dataset_metadata_path", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/testdataset/v4.0/testdata.csv", help="Path to the CSV dataset") # 使用 CSV 文件
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
@@ -476,14 +476,14 @@ def main():
 
     # 数据集 Parse dataset (CSV parsing instead of txt) 
     try:
-        df = pd.read_csv(args.dataset_metadata_path)
+        df = pd.read_csv(args.dataset_metadata_path) # todo 改变id逻辑
         if 'image' not in df.columns:
             raise ValueError(f"Column 'image' not found in CSV {args.dataset_metadata_path}")
         total_images = len(df)
         print(f"total_images:{total_images}")
         my_indices = list(range(rank, total_images, world_size))
         print(f"[RANK {rank}] Loaded CSV with {total_images} rows. Processing {len(my_indices)} rows.")
-    except Exception as e:
+    except Exception as e: #!todo
         print(f"[ERROR] Failed to load CSV: {e}")
         return
 
@@ -523,7 +523,7 @@ def main():
         print(f"[RANK {rank}] Processing row index {row_idx}: {image_path}")
         
         # Prompt 加载与统计
-        prompt, negative_prompt, use_def_pos, use_def_neg = load_prompts(image_path, args.fps, rank)
+        prompt, negative_prompt, use_def_pos, use_def_neg = load_prompts(image_path, args.fps, rank) #todo 正负prompt要对应写好
         if use_def_pos or use_def_neg:
             default_prompt_count += 1 # 如果任意一个使用了默认值，则计数加1
             
@@ -547,7 +547,7 @@ def main():
 
                 # 生成替代的 九宫格 (用于首帧策略)
                 id_grid_alt = None
-                if args.id_inject_strategy == "first_frame":
+                if args.id_inject_strategy == "first_frame": #todo 注意这里
                     id_grid_alt = generate_id_grid_with_smpl(image_path, [image_path], args, smpl_infer, force_first_frame=True)
                     if id_grid_alt is not None:
                         id_grid_alt = id_grid_alt.to(device)
