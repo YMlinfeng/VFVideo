@@ -1581,15 +1581,15 @@ def model_fn_wan_video(
         t_mod = dit.time_projection(t).unflatten(1, (6, dit.dim))
     
     # Motion Controller
-    if motion_bucket_id is not None and motion_controller is not None:
+    if motion_bucket_id is not None and motion_controller is not None: #i2v 没有
         t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
     context = dit.text_embedding(context) #(1, 512, 1536) 1,512,4096->5120
 
     x = latents #!不单独区分首帧,因为有mask
     
-    if x.shape[0] != context.shape[0]:
-        x = torch.concat([x] * context.shape[0], dim=0) #todo 再确认一下time是怎么进来的
-    if timestep.shape[0] != context.shape[0]:
+    if x.shape[0] != context.shape[0]: # #i2v 跳过
+        x = torch.concat([x] * context.shape[0], dim=0) 
+    if timestep.shape[0] != context.shape[0]: #i2v 跳过
         timestep = torch.concat([timestep] * context.shape[0], dim=0)
 
     # Image Embedding

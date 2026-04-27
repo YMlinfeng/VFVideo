@@ -94,7 +94,7 @@ def parse_args():
     parser.add_argument("--rank", type=int, default=0, help="Global rank") # Rank
     parser.add_argument("--world_size", type=int, default=1, help="World size") # 总卡数
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank") # 单机卡数
-    parser.add_argument("--id_cfg_start_step", type=int, default=20, help="Step to start ID CFG") # ID CFG 开始步数
+    parser.add_argument("--id_cfg_start_step", type=int, default=0, help="Step to start ID CFG") # ID CFG 开始步数
     parser.add_argument("--id_cfg_end_step", type=int, default=40, help="Step to end ID CFG") # ID CFG 结束步数
     parser.add_argument("--text_cfg_start_step", type=int, default=0, help="Step to start Text CFG") # Text CFG 开始步数
     parser.add_argument("--text_cfg_end_step", type=int, default=40, help="Step to end Text CFG") # Text CFG 结束步数
@@ -159,7 +159,7 @@ def load_prompts(image_path, fps, rank): #todo
             
     if negative_prompt is None or negative_prompt == "":
         negative_prompt = (
-            f"FPS-{fps} The video plays in distorted slow motion with unstable speed and jittering frames. "
+            f"FPS-30 The video plays in distorted slow motion with unstable speed and jittering frames. "
             "The camera captures the scene in slow motion. An abstract, computer-generated, unrealistic, "
             "animation, cartoon, scene with distorted and blurry visuals, with high saturation and high contrast. "
             "A deformed, disfigured figure without specific features, depicted as an illustration, with scene transition. "
@@ -285,9 +285,9 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer, for
         target_size=[final_h, final_w], 
         save_path_dir=debug_dir
     )
-    print (len(res))
-    cv2.imwrite('./debug1.png', res[0][:,:,::-1])
-    cv2.imwrite('./debug2.png', res[-1][:,:,::-1])
+    # print (len(res))
+    # cv2.imwrite('./debug1.png', res[0][:,:,::-1])
+    # cv2.imwrite('./debug2.png', res[-1][:,:,::-1])
         
     frames = []
     for frame_np in res:
@@ -341,7 +341,7 @@ def run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, i
     )
     return video
 
-def concat_visualizations(video_frames, id_image_paths, id_grid_tensor):
+def concat_visualizations_3(video_frames, id_image_paths, id_grid_tensor):
     import numpy as np
     from PIL import Image
     
@@ -432,21 +432,78 @@ def concat_visualizations(video_frames, id_image_paths, id_grid_tensor):
         
     return new_frames
 
+def concat_visualizations_2(video_frames, id_image_paths, id_grid_tensor):
+    import numpy as np
+    from PIL import Image
+    
+    if len(video_frames) == 0:
+        return video_frames
+        
+    # 1. 处理 ID Grid tensor -> frames (保持不变)
+    grid_frames = []
+    if id_grid_tensor is not None:
+        grid_np = id_grid_tensor.detach().cpu().numpy()
+        grid_np = np.transpose(grid_np, (1, 2, 3, 0)) # (T, H, W, 3)
+        grid_np = (grid_np + 1.0) * 127.5
+        grid_np = np.clip(grid_np, 0, 255).astype(np.uint8)
+        for i in range(grid_np.shape[0]):
+            grid_frames.append(Image.fromarray(grid_np[i]))
+    else:
+        # 如果没有 grid，则只返回原始视频帧
+        return video_frames
+
+    # 2. 创建拼接帧 (现在只横向拼接 video 和 grid)
+    num_frames = len(video_frames)
+    new_frames = []
+    
+    for i in range(num_frames):
+        # 处理视频帧
+        vf = video_frames[i]
+        if isinstance(vf, np.ndarray):
+            vf = Image.fromarray(vf)
+            
+        # 获取对应的 grid 帧
+        gf = grid_frames[i if i < len(grid_frames) else -1]
+        
+        # 计算画布尺寸：宽度相加，高度取最大者
+        canvas_w = vf.width + gf.width
+        canvas_h = max(vf.height, gf.height)
+        
+        # 创建画布
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
+        
+        # 拼接：视频在左，Grid 在右
+        canvas.paste(vf, (0, 0))
+        canvas.paste(gf, (vf.width, 0))
+        
+        new_frames.append(np.array(canvas))
+        
+    return new_frames
 
 def save_inference_config(output_dir, args, rank):
     if rank != 0: return
     config_path = os.path.join(output_dir, "inference_config.txt")
+    
     with open(config_path, "w", encoding="utf-8") as f:
-        f.write(f"ID Grid I2V Inference Configuration\n")
-        f.write(f"Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write(f"Data Paths:\n  image_list_path: {args.dataset_metadata_path}\n  audio_dir: {args.audio_dir}\n")
-        f.write(f"Model:\n  ckpt_path: {args.ckpt_path}\n  model_id: {args.model_id}\n")
-        f.write(f"Inference:\n  num_frames: {args.num_frames}\n  height: {args.height}\n  width: {args.width}\n  max_pixels: {args.max_pixels}\n")
-        f.write(f"ID Grid:\n  enable_id_grid: {args.enable_id_grid}\n  id_grid_max_pixels: {args.id_grid_max_pixels}\n  id_grid_num_frames: {args.id_grid_num_frames}\n")
-        f.write(f"ID Injection Control:\n  id_inject_strategy: {args.id_inject_strategy}\n  id_inject_start_step: {args.id_inject_start_step}\n  id_inject_end_step: {args.id_inject_end_step}\n")
-        f.write(f"CFG Control:\n  id_cfg_start: {args.id_cfg_start_step}\n  id_cfg_end: {args.id_cfg_end_step}\n  text_cfg_start: {args.text_cfg_start_step}\n  text_cfg_end: {args.text_cfg_end_step}\n")
-        f.write(f"Other:\n  seed: {args.seed}\n  fps: {args.fps}\n  quality: {args.quality}\n  littletestdataset: {args.littletestdataset}\n")
-        f.write(f"位置编码:-1") #todo
+        f.write("="*30 + " INFERENCE CONFIGURATION " + "="*30 + "\n")
+        f.write(f"Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("="*85 + "\n\n")
+        
+        # 将 args 转换为字典并按字母顺序排序，方便查找
+        args_dict = vars(args)
+        
+        # 统计参数最长字符长度，用于对齐排版
+        max_key_len = max(len(k) for k in args_dict.keys())
+        
+        f.write(f"{'PARAMETER':<{max_key_len}} | {'VALUE'}\n")
+        f.write("-" * (max_key_len + 3) + "+" + "-" * 50 + "\n")
+        
+        for key in sorted(args_dict.keys()):
+            value = args_dict[key]
+            f.write(f"{key:<{max_key_len}} | {value}\n")
+            
+        f.write("\n" + "="*30 + " END OF CONFIG " + "="*30 + "\n")
+    print(f"[INFO] Configuration saved to {config_path}")
 
 
 def main():
@@ -570,7 +627,7 @@ def main():
                 video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w, id_grid_alt=id_grid_alt)
                 
                 #concat
-                video = concat_visualizations(video, id_image_paths, id_grid)
+                video = concat_visualizations_2(video, id_image_paths, id_grid)
 
                 # 保存
                 video_name = generate_video_name(image_path, audio_path)
@@ -589,13 +646,13 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        import debugpy
-        debugpy.listen(("0.0.0.0", 5678))
-        print("=" * 50)
-        print("Waiting for debugger to attach on port 5678...")
-        print("=" * 50)
-        debugpy.wait_for_client()  
-        print("Debugger attached! Continuing...")
+    # if os.environ.get("LOCAL_RANK", "0") == "0":
+    #     import debugpy
+    #     debugpy.listen(("0.0.0.0", 5678))
+    #     print("=" * 50)
+    #     print("Waiting for debugger to attach on port 5678...")
+    #     print("=" * 50)
+    #     debugpy.wait_for_client()  
+    #     print("Debugger attached! Continuing...")
     print("start inference!")
     main()
