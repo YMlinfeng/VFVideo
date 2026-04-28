@@ -74,7 +74,7 @@ def parse_args():
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    parser.add_argument("--ckpt_path", type=str, default="", help="Model checkpoint path") # 模型路径
+    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1400.safetensors", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
@@ -98,9 +98,9 @@ def parse_args():
     parser.add_argument("--id_cfg_end_step", type=int, default=40, help="Step to end ID CFG") # ID CFG 结束步数
     parser.add_argument("--text_cfg_start_step", type=int, default=0, help="Step to start Text CFG") # Text CFG 开始步数
     parser.add_argument("--text_cfg_end_step", type=int, default=40, help="Step to end Text CFG") # Text CFG 结束步数
-    parser.add_argument("--id_inject_strategy", type=str, default="black", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
-    parser.add_argument("--id_inject_start_step", type=int, default=5, help="Step to start injecting target ID") 
-    parser.add_argument("--id_inject_end_step", type=int, default=30, help="Step to end injecting target ID")
+    parser.add_argument("--id_inject_strategy", type=str, default="first_frame", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
+    parser.add_argument("--id_inject_start_step", type=int, default=0, help="Step to start injecting target ID") 
+    parser.add_argument("--id_inject_end_step", type=int, default=40, help="Step to end injecting target ID")
     
     
     return parser.parse_args()

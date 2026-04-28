@@ -35,7 +35,7 @@ export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATASET_METADATA_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/testdataset/v4.0/testdata.csv"
 OUTPUT_BASE_DIR="output_id_grid"
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
-CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-600.safetensors" 
+CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1400.safetensors" 
 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 NUM_FRAMES=49
