@@ -3,6 +3,8 @@
 # todo 关了人脸貌似也会进检测
 import os
 import sys
+
+from sympy import false
 sys.path.append(os.getcwd())
 sys.path.append(os.path.abspath("/m2v_intern/mengzijie/DiffSynth-Studio/get_smpl_motion"))
 # 引入项目根目录，以便导入 get_smpl_motion
@@ -74,7 +76,7 @@ def parse_args():
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1400.safetensors", help="Model checkpoint path") # 模型路径
+    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1600.safetensors", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
@@ -101,7 +103,7 @@ def parse_args():
     parser.add_argument("--id_inject_strategy", type=str, default="first_frame", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
     parser.add_argument("--id_inject_start_step", type=int, default=0, help="Step to start injecting target ID") 
     parser.add_argument("--id_inject_end_step", type=int, default=40, help="Step to end injecting target ID")
-    
+    parser.add_argument("--nodebug", action="store_false", help="Step to end injecting target ID")
     
     return parser.parse_args()
 
@@ -510,7 +512,16 @@ def main():
     # 初始化逻辑
     args = parse_args()
     print(args)
-    # args.enable_id_grid = True
+    args.enable_id_grid = True
+    if args.nodebug:
+        if os.environ.get("LOCAL_RANK", "0") == "0":
+            import debugpy
+            debugpy.listen(("0.0.0.0", 5678))
+            print("=" * 50)
+            print("Waiting for debugger to attach on port 5678...")
+            print("=" * 50)
+            debugpy.wait_for_client()  
+            print("Debugger attached! Continuing...")
     rank, world_size, local_rank = get_distributed_info(args)
     if not torch.cuda.is_available(): raise RuntimeError("CUDA is not available")
     num_gpus = torch.cuda.device_count()
@@ -533,14 +544,14 @@ def main():
 
     # 数据集 Parse dataset (CSV parsing instead of txt) 
     try:
-        df = pd.read_csv(args.dataset_metadata_path) # todo 改变id逻辑
+        df = pd.read_csv(args.dataset_metadata_path) 
         if 'image' not in df.columns:
             raise ValueError(f"Column 'image' not found in CSV {args.dataset_metadata_path}")
         total_images = len(df)
         print(f"total_images:{total_images}")
         my_indices = list(range(rank, total_images, world_size))
         print(f"[RANK {rank}] Loaded CSV with {total_images} rows. Processing {len(my_indices)} rows.")
-    except Exception as e: #!todo
+    except Exception as e: 
         print(f"[ERROR] Failed to load CSV: {e}")
         return
 
@@ -604,7 +615,7 @@ def main():
 
                 # 生成替代的 九宫格 (用于首帧策略)
                 id_grid_alt = None
-                if args.id_inject_strategy == "first_frame": #todo 注意这里
+                if args.id_inject_strategy == "first_frame": #todo 注意这里有bug
                     id_grid_alt = generate_id_grid_with_smpl(image_path, [image_path], args, smpl_infer, force_first_frame=True)
                     if id_grid_alt is not None:
                         id_grid_alt = id_grid_alt.to(device)
@@ -646,13 +657,4 @@ def main():
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")
 
 if __name__ == "__main__":
-    # if os.environ.get("LOCAL_RANK", "0") == "0":
-    #     import debugpy
-    #     debugpy.listen(("0.0.0.0", 5678))
-    #     print("=" * 50)
-    #     print("Waiting for debugger to attach on port 5678...")
-    #     print("=" * 50)
-    #     debugpy.wait_for_client()  
-    #     print("Debugger attached! Continuing...")
-    print("start inference!")
     main()

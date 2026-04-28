@@ -524,7 +524,7 @@ class WanVideoPipeline(BasePipeline):
 
             # Scheduler 利用预测出的噪声 noise_pred，计算出上一个时间步（噪声更少）的 Latents。这是画面逐渐清晰的过程；调度器（Scheduler，如 Euler, DDIM 等数学求解器）会用复杂的微积分公式，把这个噪声从当前的 latents 中“减去”一小部分
             inputs_shared["latents"] = self.scheduler.step(noise_pred, self.scheduler.timesteps[progress_id], inputs_shared["latents"])
-            if "first_frame_latents" in inputs_shared: #todo 这个开关居然没开，猜测：强行覆盖有时候会撕裂第一帧和第二帧之间的时空连贯性，导致视频开头有“闪烁”或“卡顿”感，所以新版本往往选择把这个硬开关关掉，让模型通过 Mask 自然过渡
+            if "first_frame_latents" in inputs_shared: # 这个没开，原因：强行覆盖有时候会撕裂第一帧和第二帧之间的时空连贯性，导致视频开头有“闪烁”或“卡顿”感，所以新版本往往选择把这个硬开关关掉，让模型通过 Mask 自然过渡
                 inputs_shared["latents"][:, :, 0:1] = inputs_shared["first_frame_latents"]
         
 
@@ -745,7 +745,7 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             noise = torch.concat((noise[:, :, -f_vace:], noise[:, :, :-f_vace]), dim=2)
         
-        return {"noise": noise, "id_grid_noise": id_grid_noise}
+        return {"noise": noise, "id_grid_noise": id_grid_noise} # 均为16通道，1帧vs11帧，但大小不同
     
 
 
@@ -1585,7 +1585,7 @@ def model_fn_wan_video(
         t_mod = t_mod + motion_controller(motion_bucket_id).unflatten(1, (6, dit.dim))
     context = dit.text_embedding(context) #(1, 512, 1536) 1,512,4096->5120
 
-    x = latents #!不单独区分首帧,因为有mask
+    x = latents #!不单独区分首帧,因为有mask # torch.Size([1, 16, 11, h,w])
     
     if x.shape[0] != context.shape[0]: # #i2v 跳过
         x = torch.concat([x] * context.shape[0], dim=0) 
@@ -1594,7 +1594,7 @@ def model_fn_wan_video(
 
     # Image Embedding
     if y is not None and dit.require_vae_embedding:
-        x = torch.cat([x, y], dim=1) #!(1, 36, 11,62,62)
+        x = torch.cat([x, y], dim=1) #!(1, 36, 11,h,w)
     if clip_feature is not None and dit.require_clip_embedding:
         clip_embdding = dit.img_emb(clip_feature)
         context = torch.cat([clip_embdding, context], dim=1) # 1,769,5120
@@ -1636,53 +1636,6 @@ def model_fn_wan_video(
     else:
         grid_seq_len = 0
     # ===================================
-
-    # # ========== 九宫格ID注入处理 ==========
-    # if id_grid_latents is not None:
-    #     # id_grid_latents: (B, 16, T_g, H_g, W_g)
-    #     b, c, t_g, h_g, w_g = id_grid_latents.shape
-        
-    #     # 1. 构造 Patch Embedding 输入
-    #     # 我们将 id_grid 放在 "y" 的位置（条件），将 "x" 的位置（噪声）置零
-    #     # 结构: [zeros_x(16) | mask(4) | id_grid(16)]
-        
-    #     zeros_x = torch.zeros(b, 16, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # ([1, 16, 1, 66, 66])
-    #     mask_grid = torch.ones(b, 4, t_g, h_g, w_g, device=x.device, dtype=x.dtype) # 掩码为1表示这是条件区域
-        
-    #     id_grid_latents = id_grid_latents.to(dtype=x.dtype)
-    #     grid_input = torch.cat([zeros_x, mask_grid, id_grid_latents], dim=1) # (B, 36, T_g, H_g, W_g) #todo 九宫格没算等效面积
-        
-    #     # 2. Patchify Grid
-    #     # 使用 dit 的 patch_embedding 层 # todo 是否要自己设计一个专门处理 ID Grid 的 patch embedding？因为它的输入结构和主视频不太一样了，输入通道为16而非36？
-    #     grid_tokens = dit.patch_embedding(grid_input) # ([1, 36, 1, 66, 66])->1,5120,1,33,33
-        
-    #     # Flatten
-    #     grid_tokens = rearrange(grid_tokens, 'b c f h w -> b (f h w) c') # torch.Size([1, 1089, 5120])一帧的情况是990个token
-        
-    #     # 3. 计算 Grid Freqs (RoPE)
-    #     # 获取 patch 后的维度
-    #     pf, ph, pw = dit.patch_size
-    #     f_token = t_g // pf # 1
-    #     h_token = h_g // ph # 33
-    #     w_token = w_g // pw # 33
-        
-    #     # 构造负时间索引，使 Grid 位于主视频之前
-    #     # 主视频从 0 开始。Grid 从 -f_token 开始到 -1
-    #     # 这样 Grid 的位置编码就 "足够近" (0 vs -1, -2...)
-    #     time_offset = -f_token
-    #     time_offset = 0
-    #     grid_freqs = make_grid_freqs(f_token, h_token, w_token, time_offset, dit.dim // dit.num_heads, x.device)
-        
-    #     # 4. 拼接到 x 和 freqs
-    #     # Grid 在时间上在前面，所以拼在前面
-    #     x = torch.cat([grid_tokens, x], dim=1)
-    #     freqs = torch.cat([grid_freqs, freqs], dim=0)
-        
-    #     # 记录 grid tokens 的长度，以便在最后剔除
-    #     grid_seq_len = grid_tokens.shape[1]
-    # else:
-    #     grid_seq_len = 0
-    # # ===================================
 
     # VAP
     if vap is not None:
