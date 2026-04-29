@@ -290,7 +290,7 @@ class UnifiedDataset(torch.utils.data.Dataset):
                     id_grid_tensor = torch.zeros((3, self.id_grid_num_frames, self.id_grid_height, self.id_grid_width), dtype=torch.float32)
                 else:
                     id_grid_tensor = self.id_grid_loader(data)
-                data["id_grid"] = id_grid_tensor # ([3, 41, 480, 528])->([3, 1, 480, 528]) 其中41和1是九宫格中每一个小格子的帧数，通过id_frames参数控制
+                data["id_grid"] = id_grid_tensor # ([3, 41, 原始高度, 原始宽度])
                 
                 # Debug 可视化
                 if self.debug:
@@ -301,14 +301,14 @@ class UnifiedDataset(torch.utils.data.Dataset):
                         fps=20
                     )
                     # 如果有视频首帧，保存对比图
-                    if "video_path" in data and torch.is_tensor(data["video_path"]):
-                        first_frame = data["video_path"][:, 0]  # (C, H, W)
-                        self.debug_visualizer.save_grid_comparison(
-                            id_grid_tensor,
-                            first_frame,
-                            "comparison",
-                            data_id=data_id
-                        )
+                    # if "video_path" in data and torch.is_tensor(data["video_path"]):
+                    #     first_frame = data["video_path"][:, 0]  # (C, H, W)
+                    #     self.debug_visualizer.save_grid_comparison(
+                    #         id_grid_tensor,
+                    #         first_frame,
+                    #         "comparison",
+                    #         data_id=data_id
+                    #     )
             # ===================================================
             # 用于暂存 Debug 数据
             # debug_raw_video = None
@@ -345,8 +345,8 @@ class UnifiedDataset(torch.utils.data.Dataset):
                         data[key] = processed_val["frames"]
                         
                         # 关键修改：创建视频数据的副本以避免in-place操作问题
-                        if torch.is_tensor(data[key]):
-                            data[key] = data[key].clone().detach()
+                        # if torch.is_tensor(data[key]):
+                        #     data[key] = data[key].clone().detach()
                         
                         # debug_raw_video = processed_val["input_img_list"]
                     else:

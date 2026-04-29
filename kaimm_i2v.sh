@@ -22,7 +22,6 @@ export PYTHONWARNINGS="ignore::FutureWarning"
 export MODELSCOPE_HTTP_TIMEOUT=300
 export MODELSCOPE_MAX_RETRIES=10
 # export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
-# cat $ACCELERATE_CONFIG_FILE
 
 # 3. 准备 Python 启动指令
 cd /m2v_intern/mengzijie/DiffSynth-Studio/
@@ -60,7 +59,7 @@ mpirun --allow-run-as-root -np $np \
       --dataset_num_workers 4 \
       --save_steps 200 \
       --max_pixels 268800 \
-      --num_frames 49 \
+      --num_frames 53 \
       --dataset_repeat 1 \
       --model_paths '[["/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00001-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00002-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00003-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00004-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00005-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00006-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00007-of-00007.safetensors"], "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/Wan2.1_VAE.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_clip_open-clip-xlm-roberta-large-vit-huge-14.safetensors"]' \
       --learning_rate 1e-5 \
@@ -74,7 +73,7 @@ mpirun --allow-run-as-root -np $np \
       --enable_id_grid \
       --id_grid_max_pixels 1048576 \
       --id_grid_num_frames 1 \
-      --id_drop_rate 0.1 \
+      --id_drop_rate 0.05 \
       --use_swanlab \
       --swanlab_mode "local" \
       --swanlab_project "wan_video_id_grid_training_i2v_v5.0" \

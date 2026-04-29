@@ -23,7 +23,7 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --enable_id_grid \
   --id_grid_max_pixels 1048576 \
   --id_grid_num_frames 1 \
-  --id_drop_rate 0.2 \
+  --id_drop_rate 0.1 \
   --use_swanlab \
   --swanlab_mode "local" \
   --swanlab_project "wan_video_id_grid" \

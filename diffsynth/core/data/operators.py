@@ -233,7 +233,7 @@ class ToList(DataProcessingOperator):
 #         return frames
 
 class LoadVideo(DataProcessingOperator):
-    def __init__(self, num_frames=81, time_division_factor=4, time_division_remainder=1, frame_processor=lambda x: x, tgt_fps=15.0):
+    def __init__(self, num_frames=81, time_division_factor=4, time_division_remainder=1, frame_processor=lambda x: x, tgt_fps=30.0):
         self.num_frames = num_frames
         self.time_division_factor = time_division_factor
         self.time_division_remainder = time_division_remainder
@@ -258,7 +258,7 @@ class LoadVideo(DataProcessingOperator):
         return duration
 
     def __call__(self, input_video_pth: str):
-        # if True: #todo
+        # if True: 
         try:
             videoreader = VideoReader(input_video_pth)
             duration_ffprobe = self.run_ffprobe_subprocess(input_video_pth)
@@ -269,7 +269,7 @@ class LoadVideo(DataProcessingOperator):
 
             # 计算在目标帧率 tgt_fps 下，整个视频原本会有多少帧
             # total_tgt_frames = 原始总帧数 / 原始帧率 * 目标帧率
-            total_tgt_frames = int(n_raw / fps * self.tgt_fps)
+            total_tgt_frames = int(n_raw / fps * self.tgt_fps) # todo
 
             # 确定实际需要截取的长度
             # 如果指定了 num_frames，则取 min(total, num_frames)，否则取全部
@@ -359,7 +359,7 @@ class LoadVideo(DataProcessingOperator):
                 "frames": processed_tensor,  # torch.Size([3, 57, 640, 480])
                 "start_idx": start_idx,  # 把算出来的随机起点传出去
                 "actual_n": actual_n,
-                "input_img_list": input_img_list # #(T,H,W,C)
+                # "input_img_list": input_img_list # #(T,H,W,C) # imageio.mimsave("debug_video.gif", input_img_list, fps=30, loop=0)
             }
             # return pil_frames, input_img_list, start_idx, actual_n
 
@@ -919,7 +919,7 @@ class LoadIDGrid(DataProcessingOperator):
 
         # 如果没有 pose 文件，返回零 tensor
         if dwpose_path is None:
-            print(f"[Bug todo LoadIDGrid] Warning: No pose file found for {video_path}. Treating as drop.")
+            print(f"[Bugfixed LoadIDGrid] No pose file found for {video_path}. Treating as drop(black id).")
             return torch.zeros((3, self.id_grid_num_frames, fallback_h, fallback_w), dtype=torch.float32)
         
         # 如果从 data 中可以获取动态算好的实际宽高，可以借用，或者纯依赖 max_pixels

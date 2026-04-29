@@ -542,38 +542,38 @@ class WanVideoPipeline(BasePipeline):
         return video
 
 
-class WanVideoUnit_IDGridEmbeddertodo(PipelineUnit):
-    """
-    九宫格ID注入 Embedder。
-    """
-    def __init__(self):
-        super().__init__(
-            input_params=("id_grid", "tiled", "tile_size", "tile_stride"),
-            output_params=("id_grid_latents",),
-            onload_model_names=("vae",)
-        )
+# class WanVideoUnit_IDGridEmbeddertodo(PipelineUnit):
+#     """
+#     九宫格ID注入 Embedder。
+#     """
+#     def __init__(self):
+#         super().__init__(
+#             input_params=("id_grid", "tiled", "tile_size", "tile_stride"),
+#             output_params=("id_grid_latents",),
+#             onload_model_names=("vae",)
+#         )
 
-    def process(self, pipe: WanVideoPipeline, id_grid, tiled, tile_size, tile_stride):
-        if id_grid is None:
-            return {}
+#     def process(self, pipe: WanVideoPipeline, id_grid, tiled, tile_size, tile_stride):
+#         if id_grid is None:
+#             return {}
         
-        if not torch.is_tensor(id_grid):
-            # 兼容性处理
-            return {}
+#         if not torch.is_tensor(id_grid):
+#             # 兼容性处理
+#             return {}
             
-        pipe.load_models_to_device(self.onload_model_names)
+#         pipe.load_models_to_device(self.onload_model_names)
         
-        # 确保在正确的 device
-        id_grid = id_grid.to(pipe.device, dtype=pipe.torch_dtype)
+#         # 确保在正确的 device
+#         id_grid = id_grid.to(pipe.device, dtype=pipe.torch_dtype)
         
-        # 修复 IndexError: 处理 DataLoader 未能正确添加 batch 维度的情况 (比如单卡单样本训练且没走 collate)
-        if id_grid.ndim == 4:
-            id_grid = id_grid.unsqueeze(0)  # (C, T, H, W) -> (1, C, T, H, W)
+#         # 修复 IndexError: 处理 DataLoader 未能正确添加 batch 维度的情况 (比如单卡单样本训练且没走 collate)
+#         if id_grid.ndim == 4:
+#             id_grid = id_grid.unsqueeze(0)  # (C, T, H, W) -> (1, C, T, H, W)
             
-        # VAE Encode
-        id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
-        # a = id_grid_latents; a = (a + 1.0) / 2.0; plt.imsave("output1.png", F.to_pil_image(a.float()))
-        return {"id_grid_latents": id_grid_latents} # ([1, 16, 1, 66, 66] ) # todo 形状既没对上（没看到用“等效面积”的逻辑调整大小），又没看到和i2v中的i相似的mask逻辑
+#         # VAE Encode
+#         id_grid_latents = pipe.vae.encode(id_grid, device=pipe.device, tiled=tiled, tile_size=tile_size, tile_stride=tile_stride).to(dtype=pipe.torch_dtype, device=pipe.device)
+#         # a = id_grid_latents; a = (a + 1.0) / 2.0; plt.imsave("output1.png", F.to_pil_image(a.float()))
+#         return {"id_grid_latents": id_grid_latents} # ([1, 16, 1, 66, 66] ) # todo 形状既没对上（没看到用“等效面积”的逻辑调整大小），又没看到和i2v中的i相似的mask逻辑
 
 class WanVideoUnit_IDGridEmbedder(PipelineUnit):
     """
@@ -590,8 +590,8 @@ class WanVideoUnit_IDGridEmbedder(PipelineUnit):
         if id_grid is None:
             return inputs_shared, inputs_posi, inputs_nega
             
-        if not torch.is_tensor(id_grid):
-            return inputs_shared, inputs_posi, inputs_nega
+        # if not torch.is_tensor(id_grid):
+        #     return inputs_shared, inputs_posi, inputs_nega
             
         if id_grid.ndim == 4:
             id_grid = id_grid.unsqueeze(0)

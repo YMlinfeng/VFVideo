@@ -226,7 +226,7 @@ class WanTrainingModule(DiffusionTrainingModule):
 
         # 调试: 检查 loss 是否有 grad_fn
         # print(f"Loss: {loss}, grad_fn: {loss.grad_fn if hasattr(loss, 'grad_fn') else 'None'}")
-        print(f"Loss: {loss}")
+        print(f"Loss: {loss}--")
         return loss
 
 
