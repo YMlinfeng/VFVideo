@@ -412,7 +412,7 @@ class WanVideoPipeline(BasePipeline):
         id_grid: Optional[torch.Tensor] = None, #type:ignore
         **kwargs,
     ):
-        # Scheduler #todo 这里是干嘛的：DDIM
+        # Scheduler 
         self.scheduler.set_timesteps(num_inference_steps, denoising_strength=denoising_strength, shift=sigma_shift)
         
         # Inputs
@@ -1482,7 +1482,7 @@ def model_fn_wan_video(
     use_gradient_checkpointing_offload: bool = False,
     control_camera_latents_input = None,
     fuse_vae_embedding_in_latents: bool = False,
-    id_grid_latents: Optional[torch.Tensor] = None,
+    # id_grid_latents: Optional[torch.Tensor] = None,
     **kwargs,
 ):
     if sliding_window_size is not None and sliding_window_stride is not None:
@@ -1625,25 +1625,6 @@ def model_fn_wan_video(
     else:
         grid_seq_len = 0
     # ===================================
-
-    # VAP
-    if vap is not None:
-        # hidden state
-        x_vap = vap_hidden_state
-        x_vap = vap.patchify(x_vap)
-        x_vap = rearrange(x_vap, 'b c f h w -> b (f h w) c').contiguous()
-        # Timestep
-        clean_timestep = torch.ones(timestep.shape, device=timestep.device).to(timestep.dtype)
-        t = vap.time_embedding(sinusoidal_embedding_1d(vap.freq_dim, clean_timestep))
-        t_mod_vap = vap.time_projection(t).unflatten(1, (6, vap.dim))
-
-        # rope
-        freqs_vap = vap.compute_freqs_mot(f,h,w).to(x.device)
-
-        # context
-        vap_clip_embedding = vap.img_emb(vap_clip_feature)
-        context_vap = vap.text_embedding(context_vap)
-        context_vap = torch.cat([vap_clip_embedding, context_vap], dim=1)
     
     # TeaCache
     if tea_cache is not None:

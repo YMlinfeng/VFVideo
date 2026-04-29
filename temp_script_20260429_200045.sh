@@ -1,4 +1,5 @@
 #!/bin/bash
+HOSTNAME_WRAPPER=/usr/local/bin/wrap_mpi.sh
 #===============================================================================
 # ID Grid I2V 多机多卡分布式推理启动脚本
 #===============================================================================
@@ -38,7 +39,7 @@ OUTPUT_BASE_DIR="output_id_grid"
 # CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1600.safetensors" 
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-2400.safetensors" 
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-2800.safetensors" 
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-2800.safetensors" 
+CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-3000.safetensors" 
 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
 NUM_FRAMES=49

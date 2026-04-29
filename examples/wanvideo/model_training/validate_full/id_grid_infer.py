@@ -76,18 +76,18 @@ def parse_args():
     parser.add_argument("--audio_dir", type=str, default="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/audio", help="Audio directory") # 音频目录
     parser.add_argument("--output_base_dir", type=str, default="output_id_grid", help="Output base directory") # 输出根目录
     parser.add_argument("--output_timestamp", type=str, default=None, help="Output timestamp string") # 运行时间戳
-    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1600.safetensors", help="Model checkpoint path") # 模型路径
+    parser.add_argument("--ckpt_path", type=str, default="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-2800.safetensors", help="Model checkpoint path") # 模型路径
     parser.add_argument("--model_id", type=str, default="Wan-AI/Wan2.1-I2V-14B-720P", help="Base model ID") # 基础模型ID
     parser.add_argument("--num_frames", type=int, default=41, help="Main video frame count") # 主视频帧数
     parser.add_argument("--height", type=int, default=None, help="Fixed height, None for equivalent area") # 固定高
     parser.add_argument("--width", type=int, default=None, help="Fixed width, None for equivalent area") # 固定宽
     parser.add_argument("--max_pixels", type=int, default=268800, help="Equivalent area max pixels") # 等效面积
-    parser.add_argument("--num_inference_steps", type=int, default=40, help="Denoising steps") # 推理步数 #todo
+    parser.add_argument("--num_inference_steps", type=int, default=40, help="Denoising steps") # 推理步数 
     parser.add_argument("--seed", type=int, default=42, help="Random seed") # 随机种子
     parser.add_argument("--fps", type=int, default=15, help="Video FPS") # 帧率
     parser.add_argument("--quality", type=int, default=5, help="Video quality") # 质量
     parser.add_argument("--littletestdataset", action="store_true", help="Audio load mode") # 音频对齐模式
-    parser.add_argument("--enable_id_grid", action="store_true", help="Enable ID Grid generation") # 开启九宫格
+    parser.add_argument("--enable_id_grid", action="store_true", default=True, help="Enable ID Grid generation") # 开启九宫格
     parser.add_argument("--id_grid_max_pixels", type=int, default=268800, help="ID Grid equivalent area") # 九宫格等效面积 #todo 这个到底用了吗
     parser.add_argument("--id_grid_num_frames", type=int, default=1, help="Number of frames for ID Grid") # 九宫格帧数 (控制长度)
     parser.add_argument("--id_video_path", type=str, default=None, help="Optional reference ID video") # 支持传入视频扣ID
@@ -103,7 +103,7 @@ def parse_args():
     parser.add_argument("--id_inject_strategy", type=str, default="first_frame", choices=["first_frame", "black", "none", "normal"], help="Strategy for ID injection outside of the inject window")
     parser.add_argument("--id_inject_start_step", type=int, default=0, help="Step to start injecting target ID") 
     parser.add_argument("--id_inject_end_step", type=int, default=40, help="Step to end injecting target ID")
-    parser.add_argument("--nodebug", action="store_false", help="Step to end injecting target ID")
+    parser.add_argument("--debug", action="store_false", help="Step to end injecting target ID")
     
     return parser.parse_args()
 
@@ -512,8 +512,7 @@ def main():
     # 初始化逻辑
     args = parse_args()
     print(args)
-    args.enable_id_grid = True
-    if args.nodebug:
+    if args.debug:
         if os.environ.get("LOCAL_RANK", "0") == "0":
             import debugpy
             debugpy.listen(("0.0.0.0", 5678))
@@ -555,13 +554,7 @@ def main():
         print(f"[ERROR] Failed to load CSV: {e}")
         return
 
-    # Audio loading
-    if args.littletestdataset:
-        with open(args.audio_dir, 'r', encoding='utf-8') as f:
-            all_audio_files = [line.strip() for line in f if line.strip()]
-    else:
-        all_audio_files = get_all_audio_files(args.audio_dir)
-
+    all_audio_files = get_all_audio_files(args.audio_dir)
     random.seed(args.seed + rank)
     success_count = 0
     fail_count = 0
@@ -606,52 +599,47 @@ def main():
         for audio_idx, audio_path in enumerate(selected_audios):
             if not os.path.exists(audio_path): continue
             
-            # try:
-            if True: 
-                # 生成九宫格
-                id_grid = generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer)
-                if id_grid is not None:
-                    id_grid = id_grid.to(device)
+            # 生成九宫格
+            id_grid = generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer)
+            if id_grid is not None:
+                id_grid = id_grid.to(device)
 
-                # 生成替代的 九宫格 (用于首帧策略)
-                id_grid_alt = None
-                if args.id_inject_strategy == "first_frame": #todo 注意这里有bug
-                    id_grid_alt = generate_id_grid_with_smpl(image_path, [image_path], args, smpl_infer, force_first_frame=True)
-                    if id_grid_alt is not None:
-                        id_grid_alt = id_grid_alt.to(device)
+            # 生成替代的 九宫格 (用于首帧策略)
+            id_grid_alt = None
+            if args.id_inject_strategy == "first_frame": 
+                id_grid_alt = generate_id_grid_with_smpl(image_path, [image_path], args, smpl_infer, force_first_frame=True)
+                if id_grid_alt is not None:
+                    id_grid_alt = id_grid_alt.to(device)
 
-                # 计算等效面积目标尺寸
-                target_h, target_w = args.height, args.width
-                if target_h is None or target_w is None:
-                    pil_img = Image.open(image_path)
-                    w, h = pil_img.size
-                    if w * h > args.max_pixels:
-                        scale = (w * h / args.max_pixels) ** 0.5
-                        target_h = int(h / scale)
-                        target_w = int(w / scale)
-                    else:
-                        target_h, target_w = h, w 
-                    target_h = target_h // 16 * 16 # VAE 需要 16 的倍数
-                    target_w = target_w // 16 * 16
+            # 计算等效面积目标尺寸
+            target_h, target_w = args.height, args.width
+            if target_h is None or target_w is None:
+                pil_img = Image.open(image_path)
+                w, h = pil_img.size
+                if w * h > args.max_pixels:
+                    scale = (w * h / args.max_pixels) ** 0.5
+                    target_h = int(h / scale)
+                    target_w = int(w / scale)
+                else:
+                    target_h, target_w = h, w 
+                target_h = target_h // 16 * 16 # VAE 需要 16 的倍数
+                target_w = target_w // 16 * 16
 
-                # 推理
-                video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w, id_grid_alt=id_grid_alt)
+            # 推理
+            video = run_inference(pipe, image_path, audio_path, args, prompt, negative_prompt, id_grid, target_h, target_w, id_grid_alt=id_grid_alt)
+            
+            #concat
+            video = concat_visualizations_2(video, id_image_paths, id_grid)
+
+            # 保存
+            video_name = generate_video_name(image_path, audio_path)
+            video_save_path = os.path.join(output_dir, video_name)
+            if os.path.exists(video_save_path):
+                video_save_path = os.path.join(output_dir, f"{os.path.splitext(video_name)[0]}_rank{rank}.mp4")
                 
-                #concat
-                video = concat_visualizations_2(video, id_image_paths, id_grid)
-
-                # 保存
-                video_name = generate_video_name(image_path, audio_path)
-                video_save_path = os.path.join(output_dir, video_name)
-                if os.path.exists(video_save_path):
-                    video_save_path = os.path.join(output_dir, f"{os.path.splitext(video_name)[0]}_rank{rank}.mp4")
-                    
-                save_video_with_audio(video, video_save_path, audio_path, fps=args.fps, quality=args.quality)
-                success_count += 1
+            save_video_with_audio(video, video_save_path, audio_path, fps=args.fps, quality=args.quality)
+            success_count += 1
                 
-            # except Exception as e: #todo
-            #     print(f"[RANK {rank}] [ERROR] Failed: {e}")
-            #     fail_count += 1
                 
     print(f"\n[RANK {rank}] Inference done! Success: {success_count}, Fail: {fail_count}")
     print(f"[RANK {rank}] Times default prompt was used (pos or neg missing): {default_prompt_count}")

@@ -60,14 +60,14 @@ mpirun --allow-run-as-root -np $np \
       --dataset_num_workers 4 \
       --save_steps 200 \
       --max_pixels 268800 \
-      --num_frames 41 \
+      --num_frames 49 \
       --dataset_repeat 1 \
       --model_paths '[["/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00001-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00002-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00003-of-00007.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00004-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00005-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00006-of-00007.safetensors","/m2v_intern/mengzijie/DiffSynth-Studio/models/Wan-AI/Wan2.1-I2V-14B-720P/diffusion_pytorch_model-00007-of-00007.safetensors"], "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/Wan2.1_VAE.safetensors", "/m2v_intern/mengzijie/DiffSynth-Studio/models/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_clip_open-clip-xlm-roberta-large-vit-huge-14.safetensors"]' \
       --learning_rate 1e-5 \
       --num_epochs 10 \
       --trainable_models "dit" \
       --remove_prefix_in_ckpt "pipe.dit." \
-      --output_path "/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1" \
+      --output_path "/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v5.0" \
       --extra_inputs "input_image" \
       --offload_optimizer_device "cpu" \
       --gradient_accumulation_steps 1 \
@@ -77,9 +77,9 @@ mpirun --allow-run-as-root -np $np \
       --id_drop_rate 0.1 \
       --use_swanlab \
       --swanlab_mode "local" \
-      --swanlab_project "wan_video_id_grid_training_i2v_v4.1" \
-      --swanlab_run_name "i2v_v4.1" \
-    2>&1 | tee logs/wan_train.log
+      --swanlab_project "wan_video_id_grid_training_i2v_v5.0" \
+      --swanlab_run_name "i2v_v5.0" \
+    2>&1 | tee logs/wan_train_v5.0.log
 
 # --trainable_models "dit.audio_injector" \
 
