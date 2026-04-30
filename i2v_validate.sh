@@ -107,7 +107,7 @@ mpirun --allow-run-as-root -np $np \
     -x https_proxy \
     -x no_proxy \
     -x MASTER_ADDR=$master_addr \
-    -x MASTER_PORT=29509 \
+    -x MASTER_PORT=29510 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
     -x NCCL_TOPO_FILE \
