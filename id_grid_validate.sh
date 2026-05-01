@@ -33,15 +33,16 @@ export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # ======================== 3. 推理参数配置 ========================
 DATASET_METADATA_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/dataset/testdataset/v4.0/testdata.csv"
-OUTPUT_BASE_DIR="output_id_grid"
+OUTPUT_BASE_DIR="output_id_grid_v5.0"
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v1.0/step-1000.safetensors" 
 # CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-1600.safetensors" 
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-2400.safetensors" 
 # CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v3.0/step-2800.safetensors" 
-CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-2800.safetensors" 
+# CKPT_PATH="/ytech_m2v4_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v4.1/step-2800.safetensors" 
+CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v5.0/step-1000.safetensors" 
 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
-NUM_FRAMES=49
+NUM_FRAMES=53
 MAX_PIXELS=268800  # 480x560
 NUM_INFERENCE_STEPS=40
 SEED=42
@@ -55,8 +56,8 @@ cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # # ======================== 5. 执行 mpirun BDY========================
-# export PATH=/opt/xray/deps:$PATH
-# export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
+export PATH=/opt/xray/deps:$PATH
+export NCCL_TOPO_FILE="/share/huzhiwen/baidu/topo_a800_hpc_bcc.xml"
 # mpirun --allow-run-as-root -np $np \
 #     -mca plm_rsh_args "-p ${Port}" \
 #     -hostfile $hostfile \
@@ -131,6 +132,7 @@ mpirun --allow-run-as-root -np $np \
     -x MASTER_PORT=29506 \
     -x WORLD_SIZE=$np \
     -x OUTPUT_TIMESTAMP \
+    -x NCCL_TOPO_FILE \
     $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/id_grid_infer.py \
         --dataset_metadata_path "$DATASET_METADATA_PATH" \
         --output_base_dir "$OUTPUT_BASE_DIR" \
@@ -151,5 +153,5 @@ mpirun --allow-run-as-root -np $np \
 
 echo "=============================================="
 echo "Inference finished!!"
-echo "Output directory: ${OUTPUT_BASE_DIR}/output_${OUTPUT_TIMESTAMP}"
+echo "Output directory: ${OUTPUT_BASE_DIR}/output_v5.0_${OUTPUT_TIMESTAMP}"
 echo "=============================================="

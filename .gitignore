@@ -48,3 +48,5 @@ temp
 get_smpl_motion/test
 get_smpl_motion/口型拒识待优化样例
 *.pdf
+output_id_grid_v5.0
+output_id_grid*
