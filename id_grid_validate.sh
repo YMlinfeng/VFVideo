@@ -42,7 +42,7 @@ OUTPUT_BASE_DIR="output_id_grid_v5.0"
 CKPT_PATH="/ytech_m2v3_hdd/mengzijie/DiffSynth-Studio/models/train/i2v_v5.0/step-1000.safetensors" 
 
 MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"
-NUM_FRAMES=53
+NUM_FRAMES=81
 MAX_PIXELS=268800  # 480x560
 NUM_INFERENCE_STEPS=40
 SEED=42

@@ -896,9 +896,6 @@ class LoadIDGrid(DataProcessingOperator):
         return expanded_binaries[:9]
     
     def __call__(self, data: dict):
-        """
-        处理视频或图片列表生成九宫格ID参考。
-        """
         # 获取视频路径
         video_path = self._get_video_path(data)
         if video_path is None:
