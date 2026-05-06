@@ -489,7 +489,7 @@ class WanVideoPipeline(BasePipeline):
                 else:
                     inputs_nega["id_grid_latents"] = inputs_posi.get("id_grid_latents")
             
-            # ID 注入策略控制 (正向分支替换)
+            # ID 注入策略控制 (正向分支替换)--
             if orig_inputs_posi_id_grid_latents is not None:
                 if id_inject_start_step <= progress_id <= id_inject_end_step:
                     # 在指定范围内，正常注入目标 ID Grid
