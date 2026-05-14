@@ -164,7 +164,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.min_timestep_boundary = min_timestep_boundary
 
     def debug_parameters(self, save_path="debug_params.txt"):
-        # "w" 模式表示每次调用都会覆盖文件。
+        # "w" 模式表示每次调用都会覆盖文件
         # 如果你想追加内容（比如在训练循环中多次打印），请把 "w" 改为 "a"
         with open(save_path, "w") as f:
             print("=== Debugging Parameters ===", file=f)
