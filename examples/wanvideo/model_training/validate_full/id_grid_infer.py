@@ -270,7 +270,7 @@ def generate_id_grid_with_smpl(image_path, id_image_paths, args, smpl_infer, for
     area = args.id_grid_max_pixels
     grid_w_raw = (area * face_ar) ** 0.5
     grid_h_raw = (area / face_ar) ** 0.5
-    final_w = int(round(grid_w_raw / 48) * 48) # 对齐到 48 的倍数
+    final_w = int(round(grid_w_raw / 48) * 48) # 对齐到48的倍数
     final_h = int(round(grid_h_raw / 48) * 48)
     if final_w == 0: final_w = 48
     if final_h == 0: final_h = 48
