@@ -339,7 +339,6 @@ class WanVideoPipeline(BasePipeline):
     @torch.no_grad()
     def __call__(
         self,
-        # Prompt
         prompt: str,
         negative_prompt: Optional[str] = "",
         # Image-to-video
