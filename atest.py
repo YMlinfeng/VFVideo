@@ -74,7 +74,6 @@ def main():
         debug=args.debug,
         debug_save_dir=args.debug_save_dir,
     )
-    
     print(f"Dataset initialized. Total samples: {len(dataset)}")
     if os.environ.get("LOCAL_RANK", "0") == "0":
         print(f"RANK={os.environ.get('RANK')}, WORLD_SIZE={os.environ.get('WORLD_SIZE')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
