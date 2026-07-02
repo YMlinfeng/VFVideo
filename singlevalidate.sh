@@ -67,7 +67,6 @@ echo "Using GPU: $CUDA_VISIBLE_DEVICES"
 echo "Checkpoint: $CKPT_PATH"
 echo "=============================================="
 
-# 直接运行 Python
 $PYTHON_EXE -u examples/wanvideo/model_training/validate_full/s2vinfer.py \
     --image_list_path "$IMAGE_LIST_PATH" \
     --audio_dir "$AUDIO_DIR" \
