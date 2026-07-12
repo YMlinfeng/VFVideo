@@ -58,7 +58,6 @@ AUDIO_SAMPLE_RATE=16000
 cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
-# 确保日志目录存在
 # mkdir -p logs
 
 echo "=============================================="
