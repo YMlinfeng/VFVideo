@@ -59,7 +59,7 @@ cd /m2v_intern/mengzijie/DiffSynth-Studio/
 PYTHON_EXE="/m2v_intern/mengzijie/env/wan2.2/bin/python"
 
 # mkdir -p logs
-
+# start inference
 echo "=============================================="
 echo "Starting Single GPU Inference..."
 echo "Using GPU: $CUDA_VISIBLE_DEVICES"
