@@ -41,7 +41,7 @@ export OUTPUT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 echo "Output timestamp: $OUTPUT_TIMESTAMP"
 
 # ======================== 3. 推理参数配置 ========================
-# 数据路径
+# 数据
 # IMAGE_LIST_PATH="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referimg_paths.txt"
 # AUDIO_DIR="/m2v_intern/mengzijie/DiffSynth-Studio/data/testdataset/littletestdataset/referaudio_paths.txt"
 # --littletestdataset \
