@@ -31,9 +31,9 @@
 
 ## 📢 News
 
-- **[2026.05]** 🎉 Code and models released!
-- **[2026.05]** 📄 Paper accepted to ICML 2026 (Best Paper Candidate)
-- **[2026.01]** 🚀 Initial release of VACE-FreeCus framework
+- **[2026.07]** 🎉 Code and models released!
+- **[2026.05]** 📄 Paper 
+- **[2026.04]** 🚀 Initial release of VACE-FreeCus framework
 
 ---
 
