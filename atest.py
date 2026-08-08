@@ -40,7 +40,6 @@ def main():
     print(f"Metadata path: {args.dataset_metadata_path}")
     print(f"Enable ID Grid: {args.enable_id_grid}")
     print(f"Debug Mode: {args.debug}")
-    
     dataset = UnifiedDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
